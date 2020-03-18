@@ -25,7 +25,6 @@ let indexedBodyData: {
 let stepCallbacks = [];
 
 const gameData = {
-    balls: 1,
     round: 1,
 };
 
@@ -58,7 +57,7 @@ function getRound(gameData) {
     return gameData.round;
 }
 
-function createBody({ world, bodyType, bodyParams, userData }) {
+function createBody({ world, bodyType, bodyParams, userData }): Body {
     const body = world.createBody(bodyParams);
     const id = uuidv4();
     body.setUserData({ ...userData, id, bodyType });
@@ -91,7 +90,6 @@ function tagBodyWithId({ body, additionalUserData, bodyType }: { body: Body, bod
 function destroyBody(body: Body) {
     const { id, bodyType } = body.getUserData();
     body.getWorld().destroyBody(body);
-    console.log(body.getWorld());
     delete bodyData[id];
     delete indexedBodyData[bodyType][id];
 }
@@ -118,8 +116,6 @@ function transformCanvasCoordinateToPhysical(event) {
 // Sometimes squares are double value
 // Sometimes there are +1 balls
 // Sometimes there are blasters
-//
-//// TODO Change the scale
 export const Scene = () => {
     const canvasRef = React.useRef();
     React.useEffect(() => {
@@ -130,6 +126,24 @@ export const Scene = () => {
 
         const pl = planck;
         var world = new pl.World(Vec2(0, 0));
+
+        function createBall() {
+            return createBody({
+                world,
+                bodyType: 'ball',
+                bodyParams: {
+                    type: 'dynamic',
+                    position: ballPosition,
+                    bullet: true,
+                },
+            }).createFixture({
+                shape: pl.Circle(ballRadius),
+                restitution: 1,
+                friction: 0,
+                // All balls bust have this filter group because they don't collide with each other
+                filterGroupIndex: -1,
+            });
+        }
 
         // Create walls, but we don't need to draw them on the canvas
         // Left wall
@@ -154,33 +168,20 @@ export const Scene = () => {
         });
 
         // Iniital blocks
-        createBody({
-            world,
-            bodyType: 'block',
-            bodyParams: Vec2(0, height / 2 - blockSize),
-            userData: { hitsLeft: 1 },
-        }).createFixture({
-            shape: Box(blockSize / 2, blockSize / 2),
-            restitution: 1,
-            friction: 0,
-        });
+        fillRow(world);
 
-        createBody({
-            world,
-            bodyType: 'ball',
-            bodyParams: {
-                type: 'dynamic',
-                position: ballPosition,
-                bullet: true,
-            },
-        }).createFixture(pl.Circle(ballRadius), 100.0);
+        // Initial ball
+        createBall();
 
         canvas.onclick = function(event) {
             const { x, y } = transformCanvasCoordinateToPhysical(event);
             const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
             trajectory.normalize();
-            // TODO: This is also wrong!
-            first(values(indexedBodyData.ball)).setLinearVelocity(Vec2.mul(trajectory, 50));
+
+            forEach(values(indexedBodyData.ball), (ballBody, idx) => {
+                ballBody.setPosition(Vec2.sub(ballPosition, Vec2.mul(trajectory, idx)));
+                ballBody.setLinearVelocity(Vec2.mul(trajectory, 30));
+            });
         };
 
         world.on('end-contact', contact => {
@@ -205,7 +206,6 @@ export const Scene = () => {
                 }
                 // Decrement the counter
                 else {
-                    console.log({ existingData });
                     blockBody.setUserData({ ...existingData, hitsLeft: hitsLeft - 1 });
                 }
             }
@@ -213,7 +213,6 @@ export const Scene = () => {
 
         function setupNextRound() {
             // Reset the ball
-            // TODO: Turn off collisions for balls!
             const { x } = first(values(indexedBodyData.ball)).getPosition();
             ballPosition.x = x;
             forEach(indexedBodyData.ball, ballBlock => {
@@ -234,7 +233,7 @@ export const Scene = () => {
             fillRow(world);
 
             // Increment the ball count?
-            gameData.balls++;
+            createBall();
         }
 
         // rendering loop
@@ -249,7 +248,6 @@ export const Scene = () => {
             // iterate over bodies and fixtures
             for (var body = world.getBodyList(); body; body = body.getNext()) {
                 for (var fixture = body.getFixtureList(); fixture; fixture = fixture.getNext()) {
-                    //console.log(fixture, body);
                     // draw or update fixture
                 }
             }
@@ -335,7 +333,6 @@ export const Scene = () => {
                     ctx.textAlign = 'center';
                     ctx.scale(-1, 1); // Zoom in and flip y axis
                     ctx.fillText(body.getUserData().hitsLeft, 0, blockSize / 4);
-                    console.log('HERE');
                     ctx.restore();
                 }
             }
