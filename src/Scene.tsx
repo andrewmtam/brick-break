@@ -1,7 +1,7 @@
 // @ts-nocheck
 
 import React from "react";
-import { size, every, range, map, forEach, first, values } from "lodash";
+import { slice, size, every, range, map, forEach, first, values } from "lodash";
 import { Edge, Circle, Box, Vec2, World, Body, Polygon } from "planck-js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -38,8 +38,8 @@ let indexedBodyData: {
 let stepCallbacks = [];
 
 const gameData = {
-  round: 1,
-  balls: 1,
+  round: 0,
+  balls: 10
 };
 
 window.gameData = gameData;
@@ -71,26 +71,34 @@ function fillRow(world) {
     ])
   ];
 
-  // One of these definitely needs to have a new ball
-  forEach(xCoordinates, xCoordinate => {
-    // New block appears 50% of the time
-    if (Math.random() < 0.5) {
-      createBody({
-        world,
-        bodyType: "block",
-        bodyParams: Vec2(xCoordinate, height / 2 - blockSize),
-        userData: { hitsLeft: gameData.round }
-      }).createFixture({
-        shape: blockShapes[0],
-        restitution: 1,
-        friction: 0
-      });
-    } else {
-      createPowerup(world, {
-        bodyParams: Vec2(xCoordinate, height / 2 - blockSize)
-      });
-    }
+  // Fill a random spot with a ball
+  const idxForBallPowerup = Math.floor(Math.random() * xCoordinates.length);
+  createPowerup(world, {
+    bodyParams: Vec2(xCoordinates[idxForBallPowerup], height / 2 - blockSize)
   });
+
+  // One of these definitely needs to have a new ball
+  forEach(
+    [
+      ...slice(xCoordinates, 0, idxForBallPowerup),
+      ...slice(xCoordinates, idxForBallPowerup + 1)
+    ],
+    xCoordinate => {
+      // New block appears 50% of the time
+      if (Math.random() < 0.5) {
+        createBody({
+          world,
+          bodyType: "block",
+          bodyParams: Vec2(xCoordinate, height / 2 - blockSize),
+          userData: { hitsLeft: gameData.round }
+        }).createFixture({
+          shape: blockShapes[0],
+          restitution: 1,
+          friction: 0
+        });
+      }
+    }
+  );
   // Iterate over each spot
   // Add new block
   // Add plus ball
@@ -135,10 +143,10 @@ function createPowerup(world, createBodyOptions) {
     world,
     bodyType: "powerup",
     ...createBodyOptions
-  })
+  });
 
-powerup.createFixture({
-    shape: Circle(ballRadius * 2),
+  powerup.createFixture({
+    shape: Circle(ballRadius),
     isSensor: true,
     restitution: 1,
     friction: 0
@@ -148,8 +156,6 @@ powerup.createFixture({
     ...powerup.getUserData(),
     powerup: "addBall"
   });
-
-    console.log(powerup);
 
   return powerup;
 }
@@ -262,10 +268,7 @@ export const Scene = () => {
     });
 
     // Iniital blocks
-    fillRow(world);
-
-    // Initial ball
-    createBall(world);
+    setupNextRound(world);
 
     canvas.onclick = function(event) {
       const { x, y } = transformCanvasCoordinateToPhysical(event);
@@ -298,12 +301,12 @@ export const Scene = () => {
           : undefined;
 
       if (powerupBody) {
-          if (powerupBody.getUserData().powerup === 'addBall') {
-              console.log("HERE");
-              console.log(contact);
-              gameData.balls++;
-              destroyBody(powerupBody);
-          }
+        const userData = powerupBody.getUserData();
+        // We need to check if the box was deleted or not!
+        if (userData.powerup === "addBall") {
+          queueStepCallback(() => destroyBody(powerupBody));
+          gameData.balls++;
+        }
       }
     });
 
@@ -396,7 +399,7 @@ export const Scene = () => {
 
       forEach(indexedBodyData.block, block => drawBody(block, "purple"));
       forEach(indexedBodyData.ball, ball => drawBody(ball, "green"));
-      forEach(indexedBodyData.powerup, powerup => drawBody(powerup, "yellow"));
+      forEach(indexedBodyData.powerup, powerup => drawBody(powerup, "red"));
 
       ctx.restore();
     }
