@@ -8,19 +8,16 @@ import { v4 as uuidv4 } from "uuid";
 // TODO:
 // Make a way to call balls back
 // Add power ups
-//  * add ball
 //  * clear row
-// Intersperse triangles into the mix
 // Add ray tracer step thing
 // Add fast forward button
-// Track the position of the first ball exiting
 //
 //
 
 // computed values
 const zoom = 35;
 const width = 300 / zoom;
-const height = 600 / zoom;
+const height = 500 / zoom;
 const blockSize = width / 10;
 const ballRadius = blockSize / 2 / 3;
 
@@ -36,48 +33,66 @@ let indexedBodyData: {
 } = {};
 
 let stepCallbacks = [];
+let roundHasStarted = false;
 
 const gameData = {
   round: 0,
-  balls: 10
+  balls: 1,
+    ballsAtStartOfRound: 1
 };
+
 
 window.gameData = gameData;
 window.indexedBodyData = indexedBodyData;
 
+const blockShapes = [
+  Box(blockSize / 2, blockSize / 2),
+  Polygon([
+    Vec2(-blockSize / 2, -blockSize / 2),
+    Vec2(-blockSize / 2, blockSize / 2),
+    Vec2(blockSize / 2, blockSize / 2)
+  ]),
+  Polygon([
+    Vec2(-blockSize / 2, -blockSize / 2),
+    Vec2(-blockSize / 2, blockSize / 2),
+    Vec2(blockSize / 2, -blockSize / 2)
+  ]),
+  Polygon([
+    Vec2(-blockSize / 2, -blockSize / 2),
+    Vec2(blockSize / 2, blockSize / 2),
+    Vec2(blockSize / 2, -blockSize / 2)
+  ]),
+  Polygon([
+    Vec2(-blockSize / 2, blockSize / 2),
+    Vec2(blockSize / 2, blockSize / 2),
+    Vec2(blockSize / 2, -blockSize / 2)
+  ])
+];
+
+function getRandomBlockShape() {
+  const randomNum = Math.random();
+  if (randomNum < 0.6) {
+    return blockShapes[0];
+  } else if (randomNum < 0.7) {
+    return blockShapes[1];
+  } else if (randomNum < 0.8) {
+    return blockShapes[2];
+  } else if (randomNum < 0.9) {
+    return blockShapes[3];
+  } else {
+    return blockShapes[4];
+  }
+}
+
 function fillRow(world) {
   const xCoordinates = range(-width / 2 + blockSize, width / 2, blockSize);
-  const blockShapes = [
-    Box(blockSize / 2, blockSize / 2),
-    Polygon([
-      Vec2(-blockSize / 2, -blockSize / 2),
-      Vec2(-blockSize / 2, blockSize / 2),
-      Vec2(blockSize / 2, blockSize / 2)
-    ]),
-    Polygon([
-      Vec2(-blockSize / 2, -blockSize / 2),
-      Vec2(-blockSize / 2, blockSize / 2),
-      Vec2(blockSize / 2, -blockSize / 2)
-    ]),
-    Polygon([
-      Vec2(-blockSize / 2, -blockSize / 2),
-      Vec2(blockSize / 2, blockSize / 2),
-      Vec2(blockSize / 2, -blockSize / 2)
-    ]),
-    Polygon([
-      Vec2(-blockSize / 2, blockSize / 2),
-      Vec2(blockSize / 2, blockSize / 2),
-      Vec2(blockSize / 2, -blockSize / 2)
-    ])
-  ];
-
   // Fill a random spot with a ball
   const idxForBallPowerup = Math.floor(Math.random() * xCoordinates.length);
   createPowerup(world, {
     bodyParams: Vec2(xCoordinates[idxForBallPowerup], height / 2 - blockSize)
   });
 
-  // One of these definitely needs to have a new ball
+  // Render blocks
   forEach(
     [
       ...slice(xCoordinates, 0, idxForBallPowerup),
@@ -86,16 +101,15 @@ function fillRow(world) {
     xCoordinate => {
       // New block appears 50% of the time
       if (Math.random() < 0.5) {
-        createBody({
-          world,
-          bodyType: "block",
-          bodyParams: Vec2(xCoordinate, height / 2 - blockSize),
-          userData: { hitsLeft: gameData.round }
-        }).createFixture({
-          shape: blockShapes[0],
-          restitution: 1,
-          friction: 0
-        });
+        const bodyParams = Vec2(xCoordinate, height / 2 - blockSize);
+        // Start doing triangles!
+        if (gameData.round > 5) {
+          createBlock(world, bodyParams, getRandomBlockShape());
+        }
+        // only blocks please
+        else {
+          createBlock(world, bodyParams, blockShapes[0]);
+        }
       }
     }
   );
@@ -104,6 +118,19 @@ function fillRow(world) {
   // Add plus ball
   // Add laser
   // Iniital blocks
+}
+
+function createBlock(world, bodyParams, shape) {
+  createBody({
+    world,
+    bodyType: "block",
+    bodyParams: bodyParams,
+    userData: { hitsLeft: gameData.round }
+  }).createFixture({
+    shape,
+    restitution: 1,
+    friction: 0
+  });
 }
 
 function ballIsOutOfBounds(ball: Body) {
@@ -185,10 +212,8 @@ function setupNextRound(world) {
   // Add a new row of blocks
   // and other stuffs
   fillRow(world);
-}
 
-function getRound(gameData) {
-  return gameData.round;
+gameData.ballsAtStartOfRound = gameData.balls;
 }
 
 function createBody({ world, bodyType, bodyParams, userData }): Body {
@@ -242,6 +267,7 @@ export const Scene = () => {
     const ctx = canvas.getContext("2d");
     const w = canvas.width;
     const h = canvas.height;
+      let ray = [];
 
     var world = new World(Vec2(0, 0));
 
@@ -275,11 +301,44 @@ export const Scene = () => {
       const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
       trajectory.normalize();
 
+        roundHasStarted = true;
       forEach(values(indexedBodyData.ball), (ballBody, idx) => {
+          // TODO: Figure out a better way to do this
         ballBody.setPosition(Vec2.sub(ballPosition, Vec2.mul(trajectory, idx)));
         ballBody.setLinearVelocity(Vec2.mul(trajectory, 50));
       });
     };
+
+    canvas.onmousemove = function(event) {
+      const { x, y } = transformCanvasCoordinateToPhysical(event);
+        const mousePosition = Vec2(x, y);
+        const trajectory = Vec2.sub(mousePosition, ballPosition);
+        trajectory.normalize();
+        const rayLength = height*.75;
+
+        const nextPosition = Vec2.add(ballPosition, Vec2.mul(trajectory, rayLength));
+
+        ray = [ballPosition, nextPosition ];
+        world.rayCast(ballPosition, nextPosition, function(fixture, point, normal,  fraction) {
+            // Always start with a fresh ray
+            if (size(ray) > 1) {
+                ray = slice(ray, 0,1);
+            }
+            ray.push(point);
+            normal.normalize();
+            const reflectionVector = Vec2.sub(trajectory, Vec2.mul(normal, 2*Vec2.dot(trajectory, normal)));
+            reflectionVector.normalize();
+            const nextPoint = Vec2.add(point, Vec2.mul(reflectionVector, rayLength*(1-fraction)))
+
+            ray.push(nextPoint);
+
+            return fraction;
+        })
+
+    };
+
+
+
 
     // Only fo stuff with sensors (e.g. powerups)
     world.on("begin-contact", contact => {
@@ -366,17 +425,27 @@ export const Scene = () => {
       window.requestAnimationFrame(loop);
     })();
 
+    // TODO: Optimize this step still
+      // and use collisions
     function postStep() {
       // Once a ball goes off screen,
       //and has negatie velocity
       // destroy it
       forEach(indexedBodyData.ball, (ballBody: Body) => {
+          const { x, y} = ballBody.getLinearVelocity();
         if (
           ballIsOutOfBounds(ballBody) &&
-          ballBody.getLinearVelocity().y <= 0
+          y <= 0
         ) {
+            if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
+                ballPosition.x = ballBody.getPosition().x;
+            }
           destroyBody(ballBody);
         }
+          // Edge case handling for when the ball basically stops moving
+          else if (roundHasStarted && x && y === 0) {
+              ballBody.setLinearVelocity(x, Math.random());
+          }
       });
       if (!size(indexedBodyData.ball)) {
         setupNextRound(world);
@@ -400,9 +469,31 @@ export const Scene = () => {
       forEach(indexedBodyData.block, block => drawBody(block, "purple"));
       forEach(indexedBodyData.ball, ball => drawBody(ball, "green"));
       forEach(indexedBodyData.powerup, powerup => drawBody(powerup, "red"));
+        drawRays(ray);
+
 
       ctx.restore();
     }
+
+      function drawRays(ray: Vec2[]) {
+        ctx.save();
+
+
+          //console.log(ray);
+      ray.forEach((vertex, idx) => {
+        const { x, y } = vertex;
+        if (idx === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth= .1;
+      ctx.stroke();
+          ctx.closePath();
+          ctx.restore();
+      }
 
     function drawBody(body: Body, fillStyle = "black") {
       const x = body.getPosition().x;
