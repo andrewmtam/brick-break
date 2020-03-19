@@ -32,13 +32,18 @@ let indexedBodyData: {
   block: { [key: string]: Body };
   ball: { [key: string]: Body };
   wall: { [key: string]: Body };
+  powerup: { [key: string]: Body };
 } = {};
 
 let stepCallbacks = [];
 
 const gameData = {
-  round: 1
+  round: 1,
+  balls: 1,
 };
+
+window.gameData = gameData;
+window.indexedBodyData = indexedBodyData;
 
 function fillRow(world) {
   const xCoordinates = range(-width / 2 + blockSize, width / 2, blockSize);
@@ -66,6 +71,7 @@ function fillRow(world) {
     ])
   ];
 
+  // One of these definitely needs to have a new ball
   forEach(xCoordinates, xCoordinate => {
     // New block appears 50% of the time
     if (Math.random() < 0.5) {
@@ -78,6 +84,10 @@ function fillRow(world) {
         shape: blockShapes[0],
         restitution: 1,
         friction: 0
+      });
+    } else {
+      createPowerup(world, {
+        bodyParams: Vec2(xCoordinate, height / 2 - blockSize)
       });
     }
   });
@@ -115,14 +125,39 @@ function createBall(world) {
     restitution: 1,
     friction: 0,
     // All balls bust have this filter group because they don't collide with each other
+    // All powerups must also have this filter group because they also don' collied
     filterGroupIndex: -1
   });
+}
+
+function createPowerup(world, createBodyOptions) {
+  const powerup = createBody({
+    world,
+    bodyType: "powerup",
+    ...createBodyOptions
+  })
+
+powerup.createFixture({
+    shape: Circle(ballRadius * 2),
+    isSensor: true,
+    restitution: 1,
+    friction: 0
+  });
+
+  powerup.setUserData({
+    ...powerup.getUserData(),
+    powerup: "addBall"
+  });
+
+    console.log(powerup);
+
+  return powerup;
 }
 
 function setupNextRound(world) {
   // Recreate all the balls now
 
-  forEach(range(0, gameData.round), idx => createBall(world));
+  forEach(range(0, gameData.balls), () => createBall(world));
   forEach(indexedBodyData.ball, ballBlock => {
     ballBlock.setLinearVelocity(Vec2(0, 0));
     ballBlock.setPosition(ballPosition);
@@ -136,12 +171,14 @@ function setupNextRound(world) {
     body.setPosition(Vec2.add(body.getPosition(), Vec2(0, -blockSize)));
   });
 
+  // Move all existing powerups down 1 row
+  forEach(indexedBodyData.powerup, (body: Body) => {
+    body.setPosition(Vec2.add(body.getPosition(), Vec2(0, -blockSize)));
+  });
+
   // Add a new row of blocks
   // and other stuffs
   fillRow(world);
-
-  // Increment the ball count?
-  createBall(world);
 }
 
 function getRound(gameData) {
@@ -152,28 +189,6 @@ function createBody({ world, bodyType, bodyParams, userData }): Body {
   const body = world.createBody(bodyParams);
   const id = uuidv4();
   body.setUserData({ ...userData, id, bodyType });
-  bodyData[id] = body;
-
-  // For easier access to all bodies
-  if (!indexedBodyData[bodyType]) {
-    indexedBodyData[bodyType] = {};
-  }
-  indexedBodyData[bodyType][id] = body;
-
-  return body;
-}
-
-function tagBodyWithId({
-  body,
-  additionalUserData,
-  bodyType
-}: {
-  body: Body;
-  bodyType: string;
-}) {
-  const id = uuidv4();
-  const userData = body.getUserData();
-  body.setUserData({ ...userData, ...additionalUserData, id, bodyType });
   bodyData[id] = body;
 
   // For easier access to all bodies
@@ -263,6 +278,36 @@ export const Scene = () => {
       });
     };
 
+    // Only fo stuff with sensors (e.g. powerups)
+    world.on("begin-contact", contact => {
+      const fixtureA = contact.getFixtureA();
+      const fixtureB = contact.getFixtureB();
+
+      const bodyA = fixtureA.getBody();
+      const bodyB = fixtureB.getBody();
+
+      // Find the fixture that is a block
+      const bodyTypeA = bodyA.getUserData().bodyType;
+      const bodyTypeB = bodyB.getUserData().bodyType;
+
+      const powerupBody =
+        bodyTypeA === "powerup"
+          ? bodyA
+          : bodyTypeB === "powerup"
+          ? bodyB
+          : undefined;
+
+      if (powerupBody) {
+          if (powerupBody.getUserData().powerup === 'addBall') {
+              console.log("HERE");
+              console.log(contact);
+              gameData.balls++;
+              destroyBody(powerupBody);
+          }
+      }
+    });
+
+    // Only for physical collision
     world.on("end-contact", contact => {
       const fixtureA = contact.getFixtureA();
       const fixtureB = contact.getFixtureB();
@@ -280,6 +325,7 @@ export const Scene = () => {
           : bodyTypeB === "block"
           ? bodyB
           : undefined;
+
       if (blockBody) {
         const existingData = blockBody.getUserData();
         const hitsLeft = existingData.hitsLeft;
@@ -330,7 +376,7 @@ export const Scene = () => {
         }
       });
       if (!size(indexedBodyData.ball)) {
-        setupNextRound();
+        setupNextRound(world);
       }
     }
 
@@ -350,6 +396,7 @@ export const Scene = () => {
 
       forEach(indexedBodyData.block, block => drawBody(block, "purple"));
       forEach(indexedBodyData.ball, ball => drawBody(ball, "green"));
+      forEach(indexedBodyData.powerup, powerup => drawBody(powerup, "yellow"));
 
       ctx.restore();
     }
