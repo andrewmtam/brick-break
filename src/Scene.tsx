@@ -1,9 +1,18 @@
 // @ts-nocheck
 
 import React from "react";
-import { range, map, forEach, first, values } from "lodash";
-import planck, { Block, Box, Vec2, World, Body, Polygon } from "planck-js";
+import { size, every, range, map, forEach, first, values } from "lodash";
+import planck, { Circle, Box, Vec2, World, Body, Polygon } from "planck-js";
 import { v4 as uuidv4 } from "uuid";
+
+// TODO:
+// Make a way to call balls back
+// Add power ups
+//  * add ball
+//  * clear row
+// Intersperse triangles into the mix
+//
+//
 
 // computed values
 const zoom = 35;
@@ -64,7 +73,7 @@ function fillRow(world) {
         bodyParams: Vec2(xCoordinate, height / 2 - blockSize),
         userData: { hitsLeft: gameData.round }
       }).createFixture({
-        shape: blockShapes[4],
+        shape: blockShapes[0],
         restitution: 1,
         friction: 0
       });
@@ -75,6 +84,24 @@ function fillRow(world) {
   // Add plus ball
   // Add laser
   // Iniital blocks
+}
+
+function createBall(world) {
+  return createBody({
+    world,
+    bodyType: "ball",
+    bodyParams: {
+      type: "dynamic",
+      position: ballPosition,
+      bullet: true
+    }
+  }).createFixture({
+    shape: Circle(ballRadius),
+    restitution: 1,
+    friction: 0,
+    // All balls bust have this filter group because they don't collide with each other
+    filterGroupIndex: -1
+  });
 }
 
 function getRound(gameData) {
@@ -158,24 +185,6 @@ export const Scene = () => {
     const pl = planck;
     var world = new pl.World(Vec2(0, 0));
 
-    function createBall() {
-      return createBody({
-        world,
-        bodyType: "ball",
-        bodyParams: {
-          type: "dynamic",
-          position: ballPosition,
-          bullet: true
-        }
-      }).createFixture({
-        shape: pl.Circle(ballRadius),
-        restitution: 1,
-        friction: 0,
-        // All balls bust have this filter group because they don't collide with each other
-        filterGroupIndex: -1
-      });
-    }
-
     // Create walls, but we don't need to draw them on the canvas
     // Left wall
     createBody({ world, bodyType: "wall" }).createFixture({
@@ -205,7 +214,7 @@ export const Scene = () => {
     fillRow(world);
 
     // Initial ball
-    createBall();
+    createBall(world);
 
     canvas.onclick = function(event) {
       const { x, y } = transformCanvasCoordinateToPhysical(event);
@@ -250,9 +259,9 @@ export const Scene = () => {
     });
 
     function setupNextRound() {
-      // Reset the ball
-      const { x } = first(values(indexedBodyData.ball)).getPosition();
-      ballPosition.x = x;
+      // Recreate all the balls now
+
+      forEach(range(0, gameData.round), idx => createBall(world));
       forEach(indexedBodyData.ball, ballBlock => {
         ballBlock.setLinearVelocity(Vec2(0, 0));
         ballBlock.setPosition(ballPosition);
@@ -271,7 +280,7 @@ export const Scene = () => {
       fillRow(world);
 
       // Increment the ball count?
-      createBall();
+      createBall(world);
     }
 
     // rendering loop
@@ -297,15 +306,32 @@ export const Scene = () => {
       window.requestAnimationFrame(loop);
     })();
 
-    function postStep() {
-      // TODO: This is broken
-      const { x, y } = first(values(indexedBodyData.ball)).getPosition();
+    function ballIsOutOfBounds(ball: Body) {
+      const { x, y } = ball.getPosition();
       if (
         x - ballRadius > width / 2 ||
         x + ballRadius < -width / 2 ||
         y - ballRadius > height / 2 ||
         y + ballRadius < -height / 2
       ) {
+        return true;
+      }
+      return false;
+    }
+
+    function postStep() {
+      // Once a ball goes off screen,
+      //and has negatie velocity
+      // destroy it
+      forEach(indexedBodyData.ball, (ballBody: Body) => {
+        if (
+          ballIsOutOfBounds(ballBody) &&
+          ballBody.getLinearVelocity().y <= 0
+        ) {
+          destroyBody(ballBody);
+        }
+      });
+      if (!size(indexedBodyData.ball)) {
         setupNextRound();
       }
     }
