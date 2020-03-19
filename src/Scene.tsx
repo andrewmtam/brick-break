@@ -2,7 +2,7 @@
 
 import React from "react";
 import { size, every, range, map, forEach, first, values } from "lodash";
-import planck, { Circle, Box, Vec2, World, Body, Polygon } from "planck-js";
+import { Edge, Circle, Box, Vec2, World, Body, Polygon } from "planck-js";
 import { v4 as uuidv4 } from "uuid";
 
 // TODO:
@@ -11,6 +11,9 @@ import { v4 as uuidv4 } from "uuid";
 //  * add ball
 //  * clear row
 // Intersperse triangles into the mix
+// Add ray tracer step thing
+// Add fast forward button
+// Track the position of the first ball exiting
 //
 //
 
@@ -39,34 +42,33 @@ const gameData = {
 
 function fillRow(world) {
   const xCoordinates = range(-width / 2 + blockSize, width / 2, blockSize);
+  const blockShapes = [
+    Box(blockSize / 2, blockSize / 2),
+    Polygon([
+      Vec2(-blockSize / 2, -blockSize / 2),
+      Vec2(-blockSize / 2, blockSize / 2),
+      Vec2(blockSize / 2, blockSize / 2)
+    ]),
+    Polygon([
+      Vec2(-blockSize / 2, -blockSize / 2),
+      Vec2(-blockSize / 2, blockSize / 2),
+      Vec2(blockSize / 2, -blockSize / 2)
+    ]),
+    Polygon([
+      Vec2(-blockSize / 2, -blockSize / 2),
+      Vec2(blockSize / 2, blockSize / 2),
+      Vec2(blockSize / 2, -blockSize / 2)
+    ]),
+    Polygon([
+      Vec2(-blockSize / 2, blockSize / 2),
+      Vec2(blockSize / 2, blockSize / 2),
+      Vec2(blockSize / 2, -blockSize / 2)
+    ])
+  ];
 
   forEach(xCoordinates, xCoordinate => {
     // New block appears 50% of the time
     if (Math.random() < 0.5) {
-      const blockShapes = [
-        Box(blockSize / 2, blockSize / 2),
-        Polygon([
-          Vec2(-blockSize / 2, -blockSize / 2),
-          Vec2(-blockSize / 2, blockSize / 2),
-          Vec2(blockSize / 2, blockSize / 2)
-        ]),
-        Polygon([
-          Vec2(-blockSize / 2, -blockSize / 2),
-          Vec2(-blockSize / 2, blockSize / 2),
-          Vec2(blockSize / 2, -blockSize / 2)
-        ]),
-        Polygon([
-          Vec2(-blockSize / 2, -blockSize / 2),
-          Vec2(blockSize / 2, blockSize / 2),
-          Vec2(blockSize / 2, -blockSize / 2)
-        ]),
-        Polygon([
-          Vec2(-blockSize / 2, blockSize / 2),
-          Vec2(blockSize / 2, blockSize / 2),
-          Vec2(blockSize / 2, -blockSize / 2)
-        ])
-      ];
-
       createBody({
         world,
         bodyType: "block",
@@ -86,6 +88,19 @@ function fillRow(world) {
   // Iniital blocks
 }
 
+function ballIsOutOfBounds(ball: Body) {
+  const { x, y } = ball.getPosition();
+  if (
+    x - ballRadius > width / 2 ||
+    x + ballRadius < -width / 2 ||
+    y - ballRadius > height / 2 ||
+    y + ballRadius < -height / 2
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function createBall(world) {
   return createBody({
     world,
@@ -102,6 +117,31 @@ function createBall(world) {
     // All balls bust have this filter group because they don't collide with each other
     filterGroupIndex: -1
   });
+}
+
+function setupNextRound(world) {
+  // Recreate all the balls now
+
+  forEach(range(0, gameData.round), idx => createBall(world));
+  forEach(indexedBodyData.ball, ballBlock => {
+    ballBlock.setLinearVelocity(Vec2(0, 0));
+    ballBlock.setPosition(ballPosition);
+  });
+
+  // Increment the level
+  gameData.round++;
+
+  // Move all existing blocks down 1 row
+  forEach(indexedBodyData.block, (body: Body) => {
+    body.setPosition(Vec2.add(body.getPosition(), Vec2(0, -blockSize)));
+  });
+
+  // Add a new row of blocks
+  // and other stuffs
+  fillRow(world);
+
+  // Increment the ball count?
+  createBall(world);
 }
 
 function getRound(gameData) {
@@ -182,30 +222,26 @@ export const Scene = () => {
     const w = canvas.width;
     const h = canvas.height;
 
-    const pl = planck;
-    var world = new pl.World(Vec2(0, 0));
+    var world = new World(Vec2(0, 0));
 
     // Create walls, but we don't need to draw them on the canvas
     // Left wall
     createBody({ world, bodyType: "wall" }).createFixture({
-      shape: pl.Edge(
-        Vec2(-width / 2, height / 2),
-        Vec2(-width / 2, -height / 2)
-      ),
+      shape: Edge(Vec2(-width / 2, height / 2), Vec2(-width / 2, -height / 2)),
       restitution: 1,
       friction: 0
     });
 
     // Right wall
     createBody({ world, bodyType: "wall" }).createFixture({
-      shape: pl.Edge(Vec2(width / 2, -height / 2), Vec2(width / 2, height / 2)),
+      shape: Edge(Vec2(width / 2, -height / 2), Vec2(width / 2, height / 2)),
       restitution: 1,
       friction: 0
     });
 
     // Top wall
     createBody({ world, bodyType: "wall" }).createFixture({
-      shape: pl.Edge(Vec2(width / 2, height / 2), Vec2(-width / 2, height / 2)),
+      shape: Edge(Vec2(width / 2, height / 2), Vec2(-width / 2, height / 2)),
       restitution: 1,
       friction: 0
     });
@@ -258,31 +294,6 @@ export const Scene = () => {
       }
     });
 
-    function setupNextRound() {
-      // Recreate all the balls now
-
-      forEach(range(0, gameData.round), idx => createBall(world));
-      forEach(indexedBodyData.ball, ballBlock => {
-        ballBlock.setLinearVelocity(Vec2(0, 0));
-        ballBlock.setPosition(ballPosition);
-      });
-
-      // Increment the level
-      gameData.round++;
-
-      // Move all existing blocks down 1 row
-      forEach(indexedBodyData.block, (body: Body) => {
-        body.setPosition(Vec2.add(body.getPosition(), Vec2(0, -blockSize)));
-      });
-
-      // Add a new row of blocks
-      // and other stuffs
-      fillRow(world);
-
-      // Increment the ball count?
-      createBall(world);
-    }
-
     // rendering loop
     (function loop() {
       processStepCallbacks();
@@ -305,19 +316,6 @@ export const Scene = () => {
       // request a new frame
       window.requestAnimationFrame(loop);
     })();
-
-    function ballIsOutOfBounds(ball: Body) {
-      const { x, y } = ball.getPosition();
-      if (
-        x - ballRadius > width / 2 ||
-        x + ballRadius < -width / 2 ||
-        y - ballRadius > height / 2 ||
-        y + ballRadius < -height / 2
-      ) {
-        return true;
-      }
-      return false;
-    }
 
     function postStep() {
       // Once a ball goes off screen,
@@ -356,7 +354,7 @@ export const Scene = () => {
       ctx.restore();
     }
 
-    function drawBody(body: planck.Body, fillStyle = "black") {
+    function drawBody(body: Body, fillStyle = "black") {
       const x = body.getPosition().x;
       const y = body.getPosition().y;
       const fixtures = body.getFixtureList();
