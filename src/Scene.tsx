@@ -97,7 +97,7 @@ function fillRow(world) {
   // Fill a random spot with a ball
   const idxForBallPowerup = Math.floor(Math.random() * xCoordinates.length);
   createPowerup(world, {
-    bodyParams: Vec2(xCoordinates[idxForBallPowerup], height / 2 - blockSize)
+    position: Vec2(xCoordinates[idxForBallPowerup], height / 2 - blockSize)
   });
 
   // Render blocks
@@ -135,10 +135,10 @@ function fillRow(world) {
 }
 
 function createBlock({ world, bodyParams, hasDoubleHitpoints, shape }) {
-  createBody({
+  return createBody({
     world,
     bodyType: "block",
-    bodyParams: bodyParams,
+    bodyParams,
     userData: {
       hitPoints: hasDoubleHitpoints ? gameData.round * 2 : gameData.round
     }
@@ -147,19 +147,6 @@ function createBlock({ world, bodyParams, hasDoubleHitpoints, shape }) {
     restitution: 1,
     friction: 0
   });
-}
-
-function ballIsOutOfBounds(ball: Body) {
-  const { x, y } = ball.getPosition();
-  if (
-    x - ballRadius > width / 2 ||
-    x + ballRadius < -width / 2 ||
-    y - ballRadius > height / 2 ||
-    y + ballRadius < -height / 2
-  ) {
-    return true;
-  }
-  return false;
 }
 
 function createBall(world) {
@@ -181,18 +168,18 @@ function createBall(world) {
   });
 }
 
-function createPowerup(world, createBodyOptions) {
+function createPowerup(world, bodyParams) {
   const powerup = createBody({
     world,
     bodyType: "powerup",
-    ...createBodyOptions
+    bodyParams
   });
 
   powerup.createFixture({
     shape: Circle(ballRadius),
-    isSensor: true,
     restitution: 1,
-    friction: 0
+    friction: 0,
+    isSensor: true
   });
 
   powerup.setUserData({
@@ -264,12 +251,11 @@ function processStepCallbacks() {
 }
 
 function transformCanvasCoordinateToPhysical(event) {
-    console.log(event);
   const { x, y } =
-    event.constructor.name === "TouchEvent" 
+    event.constructor.name === "TouchEvent"
       ? {
-          x: (first(event.touches)||first(event.changedTouches)).clientX,
-          y: (first(event.touches)||first(event.changedTouches)).clientY
+          x: (first(event.touches) || first(event.changedTouches)).clientX,
+          y: (first(event.touches) || first(event.changedTouches)).clientY
         }
       : event;
   return { x: x / zoom - width / 2, y: -y / zoom + height / 2 };
@@ -316,12 +302,23 @@ export const Scene = () => {
       friction: 0
     });
 
+    // Bottom wall
+    createBody({
+      world,
+      bodyType: "wall",
+      userData: { isBottomWall: true }
+    }).createFixture({
+      shape: Edge(Vec2(width / 2, -height / 2), Vec2(-width / 2, -height / 2)),
+      restitution: 1,
+      friction: 0
+    });
+
     // Iniital blocks
     setupNextRound(world);
 
-      function onClick(event) {
-        event.preventDefault();
-          ray = [];
+    function onClick(event) {
+      event.preventDefault();
+      ray = [];
       const { x, y } = transformCanvasCoordinateToPhysical(event);
       const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
       trajectory.normalize();
@@ -338,10 +335,10 @@ export const Scene = () => {
         },
         Promise.resolve()
       );
-      }
+    }
 
     function onMove(event) {
-        event.preventDefault();
+      event.preventDefault();
       const { x, y } = transformCanvasCoordinateToPhysical(event);
       const mousePosition = Vec2(x, y);
       const trajectory = Vec2.sub(mousePosition, ballPosition);
@@ -386,9 +383,8 @@ export const Scene = () => {
       });
     }
 
-
     canvas.onclick = onClick;
-      canvas.ontouchend = onClick;
+    canvas.ontouchend = onClick;
     canvas.onmousemove = onMove;
     canvas.ontouchmove = onMove;
 
@@ -450,7 +446,43 @@ export const Scene = () => {
         }
         // Decrement the counter
         else {
-          blockBody.setUserData({ ...existingData, hitPoints: hitPoints - 1 });
+          blockBody.setUserData({
+            ...existingData,
+            hitPoints: hitPoints - 1
+          });
+        }
+      }
+    });
+    // Only for physical collision
+    world.on("end-contact", contact => {
+      const fixtureA = contact.getFixtureA();
+      const fixtureB = contact.getFixtureB();
+
+      const bodyA = fixtureA.getBody();
+      const bodyB = fixtureB.getBody();
+
+      // Find the fixture that is a block
+      const bodyTypeA = bodyA.getUserData().bodyType;
+      const bodyTypeB = bodyB.getUserData().bodyType;
+
+      const wallBody =
+        bodyTypeA === "wall" ? bodyA : bodyTypeB === "wall" ? bodyB : undefined;
+
+      const ballBody =
+        bodyTypeA === "ball" ? bodyA : bodyTypeB === "ball" ? bodyB : undefined;
+
+      if (ballBody) {
+        if (wallBody) {
+          if (wallBody.getUserData().isBottomWall) {
+            if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
+              // If the ball exited out of bounds past the x boundry, set it back within
+              ballPosition.x = Math.max(
+                Math.min(ballBody.getPosition().x, width / 2 - ballRadius * 2),
+                -width / 2 + ballRadius * 2
+              );
+            }
+            queueStepCallback(() => destroyBody(ballBody));
+          }
         }
       }
     });
@@ -486,18 +518,8 @@ export const Scene = () => {
       // destroy it
       forEach(indexedBodyData.ball, (ballBody: Body) => {
         const { x, y } = ballBody.getLinearVelocity();
-        if (ballIsOutOfBounds(ballBody)) {
-          if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
-            // If the ball exited out of bounds past the x boundry, set it back within
-            ballPosition.x = Math.max(
-              Math.min(ballBody.getPosition().x, width / 2 - ballRadius * 2),
-              -width / 2 + ballRadius * 2
-            );
-          }
-          destroyBody(ballBody);
-        }
         // Edge case handling for when the ball basically stops moving
-        else if (x && Math.abs(y) < Math.abs(0.01)) {
+        if (x && Math.abs(y) < Math.abs(0.01)) {
           console.log(y, "reset velocity", ballBody);
           ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
         }
