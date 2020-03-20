@@ -508,16 +508,6 @@ export const Scene = () => {
 
       render();
 
-      // iterate over bodies and fixtures
-      for (var body = world.getBodyList(); body; body = body.getNext()) {
-        for (
-          var fixture = body.getFixtureList();
-          fixture;
-          fixture = fixture.getNext()
-        ) {
-          // draw or update fixture
-        }
-      }
       // request a new frame
       window.requestAnimationFrame(loop);
     })();
