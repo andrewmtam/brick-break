@@ -454,7 +454,7 @@ export const Scene = () => {
       }
     });
     // Only for physical collision
-    world.on("end-contact", contact => {
+    world.on("begin-contact", contact => {
       const fixtureA = contact.getFixtureA();
       const fixtureB = contact.getFixtureB();
 
@@ -474,14 +474,27 @@ export const Scene = () => {
       if (ballBody) {
         if (wallBody) {
           if (wallBody.getUserData().isBottomWall) {
+            const { x, y } = ballBody.getLinearVelocity();
+            // Track the posiition of the first ball that left
             if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
-              // If the ball exited out of bounds past the x boundry, set it back within
               ballPosition.x = Math.max(
                 Math.min(ballBody.getPosition().x, width / 2 - ballRadius * 2),
                 -width / 2 + ballRadius * 2
               );
             }
-            queueStepCallback(() => destroyBody(ballBody));
+            // Edge case handling for when the ball basically stops moving
+            if (x && Math.abs(y) < Math.abs(0.01)) {
+              console.log(y, "reset velocity", ballBody);
+              ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
+            }
+            queueStepCallback(() => {
+              destroyBody(ballBody);
+              // If after destroying this ball, there are no more
+              // then start the next round
+              if (!size(indexedBodyData.ball)) {
+                setupNextRound(world);
+              }
+            });
           }
         }
       }
@@ -493,7 +506,6 @@ export const Scene = () => {
 
       world.step(1 / 60);
 
-      postStep();
       render();
 
       // iterate over bodies and fixtures
@@ -509,25 +521,6 @@ export const Scene = () => {
       // request a new frame
       window.requestAnimationFrame(loop);
     })();
-
-    // TODO: Optimize this step still
-    // and use collisions
-    function postStep() {
-      // Once a ball goes off screen,
-      //and has negatie velocity
-      // destroy it
-      forEach(indexedBodyData.ball, (ballBody: Body) => {
-        const { x, y } = ballBody.getLinearVelocity();
-        // Edge case handling for when the ball basically stops moving
-        if (x && Math.abs(y) < Math.abs(0.01)) {
-          console.log(y, "reset velocity", ballBody);
-          ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
-        }
-      });
-      if (!size(indexedBodyData.ball)) {
-        setupNextRound(world);
-      }
-    }
 
     function render() {
       // Clear the canvas
