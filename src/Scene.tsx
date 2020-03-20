@@ -9,8 +9,8 @@ import { v4 as uuidv4 } from "uuid";
 // Make a way to call balls back
 // Add power ups
 //  * clear row
-// Add ray tracer step thing
 // Add fast forward button
+// Fix powerup size -- not sure why this is even broken
 //
 //
 
@@ -320,6 +320,10 @@ export const Scene = () => {
 
         ray = [ballPosition, nextPosition ];
         world.rayCast(ballPosition, nextPosition, function(fixture, point, normal,  fraction) {
+            // TODO: Fix this sensor properly
+            if (fixture.isSensor()) {
+                return -1;
+            }
             // Always start with a fresh ray
             if (size(ray) > 1) {
                 ray = slice(ray, 0,1);
@@ -438,13 +442,14 @@ export const Scene = () => {
           y <= 0
         ) {
             if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
-                ballPosition.x = ballBody.getPosition().x;
+                // If the ball exited out of bounds past the x boundry, set it back within
+                ballPosition.x = Math.max(Math.min(ballBody.getPosition().x, width/2 - ballRadius*2), -width/2 + ballRadius*2);
             }
           destroyBody(ballBody);
         }
           // Edge case handling for when the ball basically stops moving
           else if (roundHasStarted && x && y === 0) {
-              ballBody.setLinearVelocity(x, Math.random());
+              ballBody.setLinearVelocity(Vec2(x, Math.random()*ballRadius));
           }
       });
       if (!size(indexedBodyData.ball)) {
