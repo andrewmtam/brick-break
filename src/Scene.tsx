@@ -1,7 +1,17 @@
 // @ts-nocheck
 
 import React from "react";
-import { slice, size, every, range, map, forEach, first, values } from "lodash";
+import {
+  reduce,
+  slice,
+  size,
+  every,
+  range,
+  map,
+  forEach,
+  first,
+  values
+} from "lodash";
 import { Edge, Circle, Box, Vec2, World, Body, Polygon } from "planck-js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -33,14 +43,12 @@ let indexedBodyData: {
 } = {};
 
 let stepCallbacks = [];
-let roundHasStarted = false;
 
 const gameData = {
   round: 0,
   balls: 1,
-    ballsAtStartOfRound: 1
+  ballsAtStartOfRound: 1
 };
-
 
 window.gameData = gameData;
 window.indexedBodyData = indexedBodyData;
@@ -103,12 +111,18 @@ function fillRow(world) {
       if (Math.random() < 0.5) {
         const bodyParams = Vec2(xCoordinate, height / 2 - blockSize);
         // Start doing triangles!
+        // And also introduce double healthblocks
         if (gameData.round > 5) {
-          createBlock(world, bodyParams, getRandomBlockShape());
+          createBlock({
+            world,
+            hasDoubleHitpoints: Math.random() > 0.9,
+            bodyParams,
+            shape: getRandomBlockShape()
+          });
         }
         // only blocks please
         else {
-          createBlock(world, bodyParams, blockShapes[0]);
+          createBlock({ world, bodyParams, shape: blockShapes[0] });
         }
       }
     }
@@ -120,12 +134,14 @@ function fillRow(world) {
   // Iniital blocks
 }
 
-function createBlock(world, bodyParams, shape) {
+function createBlock({ world, bodyParams, hasDoubleHitpoints, shape }) {
   createBody({
     world,
     bodyType: "block",
     bodyParams: bodyParams,
-    userData: { hitsLeft: gameData.round }
+    userData: {
+      hitPoints: hasDoubleHitpoints ? gameData.round * 2 : gameData.round
+    }
   }).createFixture({
     shape,
     restitution: 1,
@@ -213,7 +229,7 @@ function setupNextRound(world) {
   // and other stuffs
   fillRow(world);
 
-gameData.ballsAtStartOfRound = gameData.balls;
+  gameData.ballsAtStartOfRound = gameData.balls;
 }
 
 function createBody({ world, bodyType, bodyParams, userData }): Body {
@@ -248,7 +264,14 @@ function processStepCallbacks() {
 }
 
 function transformCanvasCoordinateToPhysical(event) {
-  const { x, y } = event;
+    console.log(event);
+  const { x, y } =
+    event.constructor.name === "TouchEvent" 
+      ? {
+          x: (first(event.touches)||first(event.changedTouches)).clientX,
+          y: (first(event.touches)||first(event.changedTouches)).clientY
+        }
+      : event;
   return { x: x / zoom - width / 2, y: -y / zoom + height / 2 };
 }
 
@@ -267,7 +290,7 @@ export const Scene = () => {
     const ctx = canvas.getContext("2d");
     const w = canvas.width;
     const h = canvas.height;
-      let ray = [];
+    let ray = [];
 
     var world = new World(Vec2(0, 0));
 
@@ -296,53 +319,78 @@ export const Scene = () => {
     // Iniital blocks
     setupNextRound(world);
 
-    canvas.onclick = function(event) {
+      function onClick(event) {
+        event.preventDefault();
+          ray = [];
       const { x, y } = transformCanvasCoordinateToPhysical(event);
       const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
       trajectory.normalize();
 
-        roundHasStarted = true;
-      forEach(values(indexedBodyData.ball), (ballBody, idx) => {
-          // TODO: Figure out a better way to do this
-        ballBody.setPosition(Vec2.sub(ballPosition, Vec2.mul(trajectory, idx)));
-        ballBody.setLinearVelocity(Vec2.mul(trajectory, 50));
-      });
-    };
+      reduce(
+        values(indexedBodyData.ball),
+        (acc, ballBody) => {
+          return acc.then(() => {
+            ballBody.setLinearVelocity(Vec2.mul(trajectory, 50));
+            return new Promise(resolve => {
+              setTimeout(() => resolve(), 10);
+            });
+          });
+        },
+        Promise.resolve()
+      );
+      }
 
-    canvas.onmousemove = function(event) {
+    function onMove(event) {
+        event.preventDefault();
       const { x, y } = transformCanvasCoordinateToPhysical(event);
-        const mousePosition = Vec2(x, y);
-        const trajectory = Vec2.sub(mousePosition, ballPosition);
-        trajectory.normalize();
-        const rayLength = height*.75;
+      const mousePosition = Vec2(x, y);
+      const trajectory = Vec2.sub(mousePosition, ballPosition);
+      trajectory.normalize();
+      const rayLength = height * 0.75;
 
-        const nextPosition = Vec2.add(ballPosition, Vec2.mul(trajectory, rayLength));
+      const nextPosition = Vec2.add(
+        ballPosition,
+        Vec2.mul(trajectory, rayLength)
+      );
 
-        ray = [ballPosition, nextPosition ];
-        world.rayCast(ballPosition, nextPosition, function(fixture, point, normal,  fraction) {
-            // TODO: Fix this sensor properly
-            if (fixture.isSensor()) {
-                return -1;
-            }
-            // Always start with a fresh ray
-            if (size(ray) > 1) {
-                ray = slice(ray, 0,1);
-            }
-            ray.push(point);
-            normal.normalize();
-            const reflectionVector = Vec2.sub(trajectory, Vec2.mul(normal, 2*Vec2.dot(trajectory, normal)));
-            reflectionVector.normalize();
-            const nextPoint = Vec2.add(point, Vec2.mul(reflectionVector, rayLength*(1-fraction)))
+      ray = [ballPosition, nextPosition];
+      world.rayCast(ballPosition, nextPosition, function(
+        fixture,
+        point,
+        normal,
+        fraction
+      ) {
+        // TODO: Fix this sensor properly
+        if (fixture.isSensor()) {
+          return -1;
+        }
+        // Always start with a fresh ray
+        if (size(ray) > 1) {
+          ray = slice(ray, 0, 1);
+        }
+        ray.push(point);
+        normal.normalize();
+        const reflectionVector = Vec2.sub(
+          trajectory,
+          Vec2.mul(normal, 2 * Vec2.dot(trajectory, normal))
+        );
+        reflectionVector.normalize();
+        const nextPoint = Vec2.add(
+          point,
+          Vec2.mul(reflectionVector, rayLength * (1 - fraction))
+        );
 
-            ray.push(nextPoint);
+        ray.push(nextPoint);
 
-            return fraction;
-        })
-
-    };
-
+        return fraction;
+      });
+    }
 
 
+    canvas.onclick = onClick;
+      canvas.ontouchend = onClick;
+    canvas.onmousemove = onMove;
+    canvas.ontouchmove = onMove;
 
     // Only fo stuff with sensors (e.g. powerups)
     world.on("begin-contact", contact => {
@@ -364,6 +412,7 @@ export const Scene = () => {
           : undefined;
 
       if (powerupBody) {
+        console.log("Got poweruip");
         const userData = powerupBody.getUserData();
         // We need to check if the box was deleted or not!
         if (userData.powerup === "addBall") {
@@ -394,14 +443,14 @@ export const Scene = () => {
 
       if (blockBody) {
         const existingData = blockBody.getUserData();
-        const hitsLeft = existingData.hitsLeft;
+        const hitPoints = existingData.hitPoints;
         // Destroy the block
-        if (hitsLeft === 1) {
+        if (hitPoints === 1) {
           queueStepCallback(() => destroyBody(blockBody));
         }
         // Decrement the counter
         else {
-          blockBody.setUserData({ ...existingData, hitsLeft: hitsLeft - 1 });
+          blockBody.setUserData({ ...existingData, hitPoints: hitPoints - 1 });
         }
       }
     });
@@ -411,8 +460,8 @@ export const Scene = () => {
       processStepCallbacks();
 
       world.step(1 / 60);
-      postStep();
 
+      postStep();
       render();
 
       // iterate over bodies and fixtures
@@ -430,27 +479,28 @@ export const Scene = () => {
     })();
 
     // TODO: Optimize this step still
-      // and use collisions
+    // and use collisions
     function postStep() {
       // Once a ball goes off screen,
       //and has negatie velocity
       // destroy it
       forEach(indexedBodyData.ball, (ballBody: Body) => {
-          const { x, y} = ballBody.getLinearVelocity();
-        if (
-          ballIsOutOfBounds(ballBody) &&
-          y <= 0
-        ) {
-            if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
-                // If the ball exited out of bounds past the x boundry, set it back within
-                ballPosition.x = Math.max(Math.min(ballBody.getPosition().x, width/2 - ballRadius*2), -width/2 + ballRadius*2);
-            }
+        const { x, y } = ballBody.getLinearVelocity();
+        if (ballIsOutOfBounds(ballBody)) {
+          if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
+            // If the ball exited out of bounds past the x boundry, set it back within
+            ballPosition.x = Math.max(
+              Math.min(ballBody.getPosition().x, width / 2 - ballRadius * 2),
+              -width / 2 + ballRadius * 2
+            );
+          }
           destroyBody(ballBody);
         }
-          // Edge case handling for when the ball basically stops moving
-          else if (roundHasStarted && x && y === 0) {
-              ballBody.setLinearVelocity(Vec2(x, Math.random()*ballRadius));
-          }
+        // Edge case handling for when the ball basically stops moving
+        else if (x && Math.abs(y) < Math.abs(0.01)) {
+          console.log(y, "reset velocity", ballBody);
+          ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
+        }
       });
       if (!size(indexedBodyData.ball)) {
         setupNextRound(world);
@@ -474,17 +524,14 @@ export const Scene = () => {
       forEach(indexedBodyData.block, block => drawBody(block, "purple"));
       forEach(indexedBodyData.ball, ball => drawBody(ball, "green"));
       forEach(indexedBodyData.powerup, powerup => drawBody(powerup, "red"));
-        drawRays(ray);
-
+      drawRays(ray);
 
       ctx.restore();
     }
 
-      function drawRays(ray: Vec2[]) {
-        ctx.save();
+    function drawRays(ray: Vec2[]) {
+      ctx.save();
 
-
-          //console.log(ray);
       ray.forEach((vertex, idx) => {
         const { x, y } = vertex;
         if (idx === 0) {
@@ -493,12 +540,12 @@ export const Scene = () => {
           ctx.lineTo(x, y);
         }
       });
-      ctx.strokeStyle = '#ff0000';
-          ctx.lineWidth= .1;
+      ctx.strokeStyle = "#ff0000";
+      ctx.lineWidth = 0.1;
       ctx.stroke();
-          ctx.closePath();
-          ctx.restore();
-      }
+      ctx.closePath();
+      ctx.restore();
+    }
 
     function drawBody(body: Body, fillStyle = "black") {
       const x = body.getPosition().x;
@@ -544,7 +591,7 @@ export const Scene = () => {
 
           ctx.textAlign = "center";
           ctx.scale(-1, 1); // Zoom in and flip y axis
-          ctx.fillText(body.getUserData().hitsLeft, 0, blockSize / 4);
+          ctx.fillText(body.getUserData().hitPoints, 0, blockSize / 4);
           ctx.restore();
         }
       }
