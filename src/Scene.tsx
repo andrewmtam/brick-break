@@ -55,6 +55,7 @@ interface UserData {
     hitPoints?: number;
     isBottomWall: boolean;
     powerup: Powerup;
+    active: boolean;
 }
 
 // This changes based on where we last exited
@@ -237,6 +238,7 @@ function createPowerup(world: World, bodyParams: BodyDef) {
     powerup.setUserData({
         ...powerup.getUserData(),
         powerup: 'addBall',
+        active: true,
     });
 
     return powerup;
@@ -486,23 +488,29 @@ export const Scene = () => {
                 updateBallVelocityMap(ballBody, velocityAfterCollision);
                 const { x, y } = velocityAfterCollision;
                 if (powerupBody) {
-                    console.log('got powerup');
                     const userData = powerupBody.getUserData();
                     if (userData.powerup === 'addBall') {
-                        queueStepCallback(() => {
-                            // Set velocity to previous value
-                            ballVelocityMap[ballBody.getUserData().id].pop();
-                            const previousVelocity = last(
-                                ballVelocityMap[ballBody.getUserData().id],
-                            );
+                        console.log('got powerup');
+                        // Set velocity to previous value
+                        ballVelocityMap[ballBody.getUserData().id].pop();
+                        const previousVelocity = last(ballVelocityMap[ballBody.getUserData().id]);
 
+                        // Immediately deactivate this as we wait to destroy this object
+                        powerupBody.setUserData({
+                            ...userData,
+                            active: false,
+                        });
+
+                        if (userData.active) {
+                            gameData.balls++;
+                        }
+
+                        queueStepCallback(() => {
                             // This should always be set though
                             if (previousVelocity) {
-                                ballBody.setLinearVelocity(previousVelocity);
+                                ballBody.setLinearVelocity(Vec2(previousVelocity));
                             }
-
                             destroyBody(powerupBody);
-                            gameData.balls++;
                         });
                     }
                 } else if (wallBody) {
