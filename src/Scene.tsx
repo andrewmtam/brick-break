@@ -5,6 +5,7 @@ import {
   reduce,
   slice,
   size,
+  last,
   every,
   range,
   map,
@@ -42,6 +43,8 @@ let indexedBodyData: {
   powerup: { [key: string]: Body };
 } = {};
 
+let ballVelocityMap = {};
+
 let stepCallbacks = [];
 
 const gameData = {
@@ -76,6 +79,14 @@ const blockShapes = [
     Vec2(blockSize / 2, -blockSize / 2)
   ])
 ];
+
+function updateBallVelocityMap(ballBody: Body, velocity: Vec2) {
+  const id = ballBody.getUserData().id;
+  if (!ballVelocityMap[id]) {
+    ballVelocityMap[id] = [];
+  }
+  ballVelocityMap[id].push(velocity);
+}
 
 function getRandomBlockShape() {
   const randomNum = Math.random();
@@ -178,8 +189,7 @@ function createPowerup(world, bodyParams) {
   powerup.createFixture({
     shape: Circle(ballRadius),
     restitution: 1,
-    friction: 0,
-    isSensor: true
+    friction: 0
   });
 
   powerup.setUserData({
@@ -323,11 +333,15 @@ export const Scene = () => {
       const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
       trajectory.normalize();
 
+      ballVelocityMap = {};
+
       reduce(
         values(indexedBodyData.ball),
         (acc, ballBody) => {
           return acc.then(() => {
-            ballBody.setLinearVelocity(Vec2.mul(trajectory, 50));
+            const velocity = Vec2.mul(trajectory, 50);
+            ballBody.setLinearVelocity(velocity);
+            updateBallVelocityMap(ballBody, velocity);
             return new Promise(resolve => {
               setTimeout(() => resolve(), 10);
             });
@@ -357,8 +371,7 @@ export const Scene = () => {
         normal,
         fraction
       ) {
-        // TODO: Fix this sensor properly
-        if (fixture.isSensor()) {
+        if (fixture.getBody().getUserData().bodyType === 'powerup') {
           return -1;
         }
         // Always start with a fresh ray
@@ -388,71 +401,6 @@ export const Scene = () => {
     canvas.onmousemove = onMove;
     canvas.ontouchmove = onMove;
 
-    // Only fo stuff with sensors (e.g. powerups)
-    world.on("begin-contact", contact => {
-      const fixtureA = contact.getFixtureA();
-      const fixtureB = contact.getFixtureB();
-
-      const bodyA = fixtureA.getBody();
-      const bodyB = fixtureB.getBody();
-
-      // Find the fixture that is a block
-      const bodyTypeA = bodyA.getUserData().bodyType;
-      const bodyTypeB = bodyB.getUserData().bodyType;
-
-      const powerupBody =
-        bodyTypeA === "powerup"
-          ? bodyA
-          : bodyTypeB === "powerup"
-          ? bodyB
-          : undefined;
-
-      if (powerupBody) {
-        console.log("Got poweruip");
-        const userData = powerupBody.getUserData();
-        // We need to check if the box was deleted or not!
-        if (userData.powerup === "addBall") {
-          queueStepCallback(() => destroyBody(powerupBody));
-          gameData.balls++;
-        }
-      }
-    });
-
-    // Only for physical collision
-    world.on("end-contact", contact => {
-      const fixtureA = contact.getFixtureA();
-      const fixtureB = contact.getFixtureB();
-
-      const bodyA = fixtureA.getBody();
-      const bodyB = fixtureB.getBody();
-
-      // Find the fixture that is a block
-      const bodyTypeA = bodyA.getUserData().bodyType;
-      const bodyTypeB = bodyB.getUserData().bodyType;
-
-      const blockBody =
-        bodyTypeA === "block"
-          ? bodyA
-          : bodyTypeB === "block"
-          ? bodyB
-          : undefined;
-
-      if (blockBody) {
-        const existingData = blockBody.getUserData();
-        const hitPoints = existingData.hitPoints;
-        // Destroy the block
-        if (hitPoints === 1) {
-          queueStepCallback(() => destroyBody(blockBody));
-        }
-        // Decrement the counter
-        else {
-          blockBody.setUserData({
-            ...existingData,
-            hitPoints: hitPoints - 1
-          });
-        }
-      }
-    });
     // Only for physical collision
     world.on("begin-contact", contact => {
       const fixtureA = contact.getFixtureA();
@@ -471,10 +419,41 @@ export const Scene = () => {
       const ballBody =
         bodyTypeA === "ball" ? bodyA : bodyTypeB === "ball" ? bodyB : undefined;
 
+      const powerupBody =
+        bodyTypeA === "powerup"
+          ? bodyA
+          : bodyTypeB === "powerup"
+          ? bodyB
+          : undefined;
+
+      const blockBody =
+        bodyTypeA === "block"
+          ? bodyA
+          : bodyTypeB === "block"
+          ? bodyB
+          : undefined;
+
       if (ballBody) {
-        if (wallBody) {
+        const velocityAfterCollision = ballBody.getLinearVelocity();
+        updateBallVelocityMap(ballBody, velocityAfterCollision);
+        const { x, y } = velocityAfterCollision;
+        if (powerupBody) {
+            console.log("got powerup");
+          const userData = powerupBody.getUserData();
+          if (userData.powerup === "addBall") {
+            queueStepCallback(() => {
+              // Set velocity to previous value
+              ballVelocityMap[ballBody.getUserData().id].pop();
+              const previousVelocity = last(
+                ballVelocityMap[ballBody.getUserData().id]
+              );
+              ballBody.setLinearVelocity(previousVelocity);
+              destroyBody(powerupBody);
+              gameData.balls++;
+            });
+          }
+        } else if (wallBody) {
           if (wallBody.getUserData().isBottomWall) {
-            const { x, y } = ballBody.getLinearVelocity();
             // Track the posiition of the first ball that left
             if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
               ballPosition.x = Math.max(
@@ -494,6 +473,20 @@ export const Scene = () => {
               if (!size(indexedBodyData.ball)) {
                 setupNextRound(world);
               }
+            });
+          }
+        } else if (blockBody) {
+          const existingData = blockBody.getUserData();
+          const hitPoints = existingData.hitPoints;
+          // Destroy the block
+          if (hitPoints === 1) {
+            queueStepCallback(() => destroyBody(blockBody));
+          }
+          // Decrement the counter
+          else {
+            blockBody.setUserData({
+              ...existingData,
+              hitPoints: hitPoints - 1
             });
           }
         }
