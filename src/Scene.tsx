@@ -26,17 +26,26 @@ declare module 'planck-js' {
 // Add power ups
 //  * clear row
 // Add fast forward button
-// Fix powerup size -- not sure why this is even broken
-//
+// Fix offset for text in triangle
 //
 //
 
 // computed values
-const zoom = 35;
-const width = 300 / zoom;
-const height = 500 / zoom;
+const retinaScale = 2;
+const physicalWidth = 300;
+const physicalHeight = 500;
+const zoom = 100;
+const width = (physicalWidth / zoom) * retinaScale;
+const height = (physicalHeight / zoom) * retinaScale;
 const blockSize = width / 10;
 const ballRadius = blockSize / 2 / 3;
+const initialBallVelocity = 25;
+const initialBalls = 100;
+const gameData = {
+    round: 0,
+    balls: initialBalls,
+    ballsAtStartOfRound: initialBalls,
+};
 
 enum BodyType {
     Block = 'block',
@@ -77,12 +86,6 @@ let indexedBodyData: {
 let ballVelocityMap: { [id: string]: Vec2[] } = {};
 
 let stepCallbacks: Function[] = [];
-
-const gameData = {
-    round: 0,
-    balls: 1,
-    ballsAtStartOfRound: 1,
-};
 
 // @ts-ignore
 window.gameData = gameData;
@@ -137,7 +140,7 @@ function getRandomBlockShape() {
 }
 
 function fillRow(world: World) {
-    const xCoordinates = range(-width / 2 + blockSize, width / 2, blockSize);
+    const xCoordinates = range(-width / 2 + blockSize, width / 2 - blockSize, blockSize);
     // Fill a random spot with a ball
     const idxForBallPowerup = Math.floor(Math.random() * xCoordinates.length);
     createPowerup(world, {
@@ -233,6 +236,7 @@ function createPowerup(world: World, bodyParams: BodyDef) {
         shape: Circle(ballRadius),
         restitution: 1,
         friction: 0,
+        isSensor: true,
     });
 
     powerup.setUserData({
@@ -315,23 +319,32 @@ function processStepCallbacks() {
 }
 
 function transformMouseEvent(event: MouseEvent): { x: any; y: any } {
-    const { x, y } = event;
-    return { x, y };
+    const { offsetX, offsetY } = event;
+    return { x: offsetX, y: offsetY };
 }
 
 function transformTouchEvent(event: TouchEvent): { x: any; y: any } {
-    const { x, y } = {
-        x: (first(event.touches) || first(event.changedTouches))?.clientX,
-        y: (first(event.touches) || first(event.changedTouches))?.clientY,
-    };
-    return { x, y };
+    const target = event.target as HTMLElement;
+    if (target) {
+        const rect = target.getBoundingClientRect();
+        const { x, y } = {
+            x: ((first(event.touches) || first(event.changedTouches))?.clientX || 0) - rect.left,
+            y: ((first(event.touches) || first(event.changedTouches))?.clientY || 0) - rect.top,
+        };
+        return { x, y };
+    }
+    return { x: 0, y: 0 };
 }
 function transformCanvasCoordinateToPhysical(event: MouseEvent | TouchEvent) {
     const { x, y } =
         event.constructor.name === 'TouchEvent'
             ? transformTouchEvent(event as TouchEvent)
             : transformMouseEvent(event as MouseEvent);
-    return { x: x / zoom - width / 2, y: -y / zoom + height / 2 };
+
+    return {
+        x: (x / zoom) * retinaScale - width / 2,
+        y: (-y / zoom) * retinaScale + height / 2,
+    };
 }
 
 // Destroy all the balls
@@ -350,8 +363,6 @@ export const Scene = () => {
             return;
         }
         const ctx = canvas.getContext('2d');
-        const w = canvas.width;
-        const h = canvas.height;
         let ray: Vec2[] = [];
 
         var world = new World(Vec2(0, 0));
@@ -405,12 +416,12 @@ export const Scene = () => {
                 values(indexedBodyData.ball),
                 async (acc: Promise<any>, ballBody) => {
                     await acc;
-                    const velocity = Vec2.mul(trajectory, 50);
+                    const velocity = Vec2.mul(trajectory, initialBallVelocity);
 
                     ballBody.setLinearVelocity(velocity);
                     updateBallVelocityMap(ballBody, velocity);
                     return new Promise(resolve => {
-                        setTimeout(() => resolve(), 10);
+                        setTimeout(() => resolve(), 50);
                     });
                 },
                 Promise.resolve(),
@@ -522,11 +533,6 @@ export const Scene = () => {
                                 -width / 2 + ballRadius * 2,
                             );
                         }
-                        // Edge case handling for when the ball basically stops moving
-                        if (x && Math.abs(y) < Math.abs(0.01)) {
-                            console.log(y, 'reset velocity', ballBody);
-                            ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
-                        }
                         queueStepCallback(() => {
                             destroyBody(ballBody);
                             // If after destroying this ball, there are no more
@@ -535,6 +541,11 @@ export const Scene = () => {
                                 setupNextRound(world);
                             }
                         });
+                    }
+                    // Edge case handling for when the ball basically stops moving
+                    if (x && Math.abs(y) < Math.abs(0.01)) {
+                        console.log(y, 'reset velocity', ballBody);
+                        ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
                     }
                 } else if (blockBody) {
                     const existingData = blockBody.getUserData();
@@ -555,10 +566,13 @@ export const Scene = () => {
         });
 
         // rendering loop
+        let prevTime = new Date().getTime();
         (function loop() {
+            let newTime = new Date().getTime();
+            let elapsedTime = newTime - prevTime;
             processStepCallbacks();
 
-            world.step(1 / 60);
+            world.step(elapsedTime / 1000);
 
             if (ctx) {
                 render(ctx);
@@ -566,25 +580,31 @@ export const Scene = () => {
 
             // request a new frame
             window.requestAnimationFrame(loop);
+            prevTime = new Date().getTime();
         })();
+
+        function transformPhysicsCoordinateToCanvasCoordinate(value: number) {
+            return value * zoom;
+        }
 
         function render(ctx: CanvasRenderingContext2D) {
             // Clear the canvas
-            ctx.clearRect(0, 0, w, h);
+            // The canvas should be twice as big, to account for retina stuffs
+            ctx.clearRect(0, 0, physicalWidth * retinaScale, physicalHeight * retinaScale);
 
             // Transform the canvas
             // Note that we need to flip the y axis since Canvas pixel coordinates
             // goes from top to bottom, while physics does the opposite.
             ctx.save();
-            ctx.translate(w / 2, h / 2); // Translate to the center
-            ctx.scale(zoom, -zoom); // Zoom in and flip y axis
+            ctx.translate((physicalWidth * retinaScale) / 2, (physicalHeight * retinaScale) / 2); // Translate to the center
+            ctx.scale(1, -1); // Zoom in and flip y axis
 
             // Draw all bodies
             ctx.strokeStyle = 'none';
 
+            forEach(indexedBodyData.powerup, powerup => drawBody(ctx, powerup, 'red'));
             forEach(indexedBodyData.block, block => drawBody(ctx, block, 'purple'));
             forEach(indexedBodyData.ball, ball => drawBody(ctx, ball, 'green'));
-            forEach(indexedBodyData.powerup, powerup => drawBody(ctx, powerup, 'red'));
             drawRays(ctx, ray);
 
             ctx.restore();
@@ -593,8 +613,10 @@ export const Scene = () => {
         function drawRays(ctx: CanvasRenderingContext2D, ray: Vec2[]) {
             ctx.save();
 
+            ctx.beginPath();
             ray.forEach((vertex, idx) => {
-                const { x, y } = vertex;
+                const x = transformPhysicsCoordinateToCanvasCoordinate(vertex.x);
+                const y = transformPhysicsCoordinateToCanvasCoordinate(vertex.y);
                 if (idx === 0) {
                     ctx.moveTo(x, y);
                 } else {
@@ -602,15 +624,15 @@ export const Scene = () => {
                 }
             });
             ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 0.1;
+            ctx.lineWidth = 2;
             ctx.stroke();
             ctx.closePath();
             ctx.restore();
         }
 
         function drawBody(ctx: CanvasRenderingContext2D, body: Body, fillStyle = 'black') {
-            const x = body.getPosition().x;
-            const y = body.getPosition().y;
+            const x = transformPhysicsCoordinateToCanvasCoordinate(body.getPosition().x);
+            const y = transformPhysicsCoordinateToCanvasCoordinate(body.getPosition().y);
             const fixtures = body.getFixtureList();
             if (fixtures) {
                 const shape = fixtures.getShape() as PolygonShape;
@@ -625,12 +647,19 @@ export const Scene = () => {
                 ctx.rotate(rotation); // Rotate to the box body frame
                 if (shapeType === 'circle') {
                     ctx.beginPath();
-                    ctx.arc(0, 0, shape.getRadius(), 0, Math.PI * 2);
+                    ctx.arc(
+                        0,
+                        0,
+                        transformPhysicsCoordinateToCanvasCoordinate(shape.getRadius()),
+                        0,
+                        Math.PI * 2,
+                    );
                     ctx.closePath();
                 } else {
                     ctx.beginPath();
                     vertices.forEach((vertex, idx) => {
-                        const { x, y } = vertex;
+                        const x = transformPhysicsCoordinateToCanvasCoordinate(vertex.x);
+                        const y = transformPhysicsCoordinateToCanvasCoordinate(vertex.y);
                         if (idx === 0) {
                             ctx.moveTo(x, y);
                         } else {
@@ -640,31 +669,36 @@ export const Scene = () => {
                     ctx.closePath();
                 }
                 ctx.fill();
-                ctx.restore();
                 // Add text for blocks
                 if (body.getUserData().bodyType === 'block') {
-                    ctx.save();
+                    // Reset the zoom
                     ctx.fillStyle = 'white';
                     // TODO: Make this dynamic properly
-                    ctx.font = `${zoom * 0.01}px serif`;
-                    ctx.translate(x, y); // Translate to the position of the box
+                    ctx.font = `24px serif`;
+                    //ctx.translate(x * zoom, y * zoom); // Translate to the position of the box
                     ctx.rotate(-Math.PI); // Rotate to the box body frame
 
                     ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+
                     ctx.scale(-1, 1); // Zoom in and flip y axis
                     ctx.fillText(body.getUserData().hitPoints + '', 0, blockSize / 4);
-                    ctx.restore();
                 }
+                ctx.restore();
             }
         }
     });
 
+    const style = {
+        border: '1px solid black',
+        width: `${physicalWidth}px`,
+        height: `${physicalHeight}px`,
+    };
+
     return (
-        <canvas
-            style={{ border: '1px solid black' }}
-            ref={canvasRef}
-            width={width * zoom}
-            height={height * zoom}
-        />
+        <div>
+            <span>Text</span>
+            <canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
+        </div>
     );
 };
