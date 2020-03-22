@@ -3,7 +3,7 @@ import { flatMap, forEach } from 'lodash';
 import { Edge, Vec2, World, Body, PolygonShape } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { BodyType } from './types';
-import { drawBody, drawRays } from './renderHelpers';
+import { drawBody, drawRays, createGraphicFromBody } from './renderHelpers';
 import {
     retinaScale,
     physicalWidth,
@@ -17,6 +17,7 @@ import {
     graphicsMap,
     rayHelper,
     stepCallbacksManager,
+    ballPosition,
 } from './state';
 import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
 import { createBody, setupNextRound } from './physicsHelpers';
@@ -38,50 +39,6 @@ window.gameData = gameData;
 window.indexedBodyData = indexedBodyData;
 // @ts-ignore
 window.graphicsMap = graphicsMap;
-
-function createGraphicFromBody(body: Body) {
-    const graphics = new PIXI.Graphics();
-
-    const x = body.getPosition().x;
-    const y = body.getPosition().y;
-    const fixtures = body.getFixtureList();
-    if (fixtures) {
-        const shape = fixtures.getShape() as PolygonShape;
-        const vertices = shape.m_vertices;
-        const shapeType = shape.getType();
-
-        if (shapeType === 'circle') {
-            graphics.lineStyle(0);
-            graphics.beginFill(0xffff0b, 0.5);
-            graphics.drawCircle(0, 0, shape.getRadius());
-            graphics.endFill();
-            graphics.transform.position.set(x, y);
-        } else {
-            graphics.beginFill(0xde3249);
-            console.log({ body });
-            const points = flatMap(vertices, vertex => {
-                const xVertex = vertex.x;
-                const yVertex = vertex.y;
-                return [xVertex, yVertex];
-            });
-            graphics.drawPolygon(points);
-            graphics.transform.position.set(x, y);
-            graphics.endFill();
-            /*
-            vertices.forEach((vertex, idx) => {
-                const x = vertex.x;
-                const y = vertex.y;
-                if (idx === 0) {
-                    graphics.moveTo(x, y);
-                } else {
-                    graphics.lineTo(x, y);
-                }
-            });
-                 */
-        }
-    }
-    return graphics;
-}
 
 function updateGraphic(body: Body, graphic: PIXI.Graphics) {}
 
@@ -147,6 +104,7 @@ export const Scene = () => {
             height: physicalHeight,
         });
         document.body.appendChild(app.view);
+
         // TODO: Blurry
         // TODO: Remove images
 
@@ -156,21 +114,46 @@ export const Scene = () => {
         app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
         app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
         app.stage.interactive = true;
-        app.renderer.plugins.interaction.on('pointerup', (e: PIXI.interaction.InteractionEvent) => {
+        app.renderer.plugins.interaction.on('mousedown', (e: PIXI.interaction.InteractionEvent) => {
             onClick(e.data.originalEvent);
         });
-        app.renderer.plugins.interaction.on(
-            'pointerdown',
-            (e: PIXI.interaction.InteractionEvent) => {
-                onMove(e.data.originalEvent);
-            },
-        );
-        app.renderer.plugins.interaction.on('touchend', (e: PIXI.interaction.InteractionEvent) => {
+        app.renderer.plugins.interaction.on('mousemove', (e: PIXI.interaction.InteractionEvent) => {
             onMove(e.data.originalEvent);
+        });
+        app.renderer.plugins.interaction.on('touchend', (e: PIXI.interaction.InteractionEvent) => {
+            onClick(e.data.originalEvent);
         });
         app.renderer.plugins.interaction.on('touchmove', (e: PIXI.interaction.InteractionEvent) => {
             onMove(e.data.originalEvent);
         });
+
+        // Add the ray
+        const rayGraphic = new PIXI.Graphics();
+        app.stage.addChild(rayGraphic);
+
+        const style = new PIXI.TextStyle({
+            align: 'center',
+            textBaseline: 'middle',
+            fontFamily: 'Arial',
+            fontSize: 24,
+            fontWeight: 'bold',
+            fill: ['#ffffff', '#00ff99'], // gradient
+            stroke: '#4a1850',
+            strokeThickness: 1,
+            wordWrap: true,
+            wordWrapWidth: 440,
+        });
+
+        const richText = new PIXI.Text(
+            'Rich text with a lot of options and across multiple lines',
+            style,
+        );
+        console.log(richText.width, richText.height);
+        richText.x = 0;
+        richText.y = 0;
+
+        richText.scale.set(1 / zoom, -1 / zoom);
+        app.stage.addChild(richText);
 
         // Iniital blocks
         setupNextRound(world);
@@ -240,6 +223,15 @@ export const Scene = () => {
                     const graphic = createGraphicFromBody(body);
                     graphicsMap[userData.id] = graphic;
                     app.stage.addChild(graphic);
+                }
+            });
+            // Also draw the rays
+            rayGraphic.clear();
+            forEach(rayHelper.getRay(), (point, idx) => {
+                if (idx === 0) {
+                    rayGraphic.lineStyle(2 / zoom, 0xffffff).moveTo(ballPosition.x, ballPosition.y);
+                } else {
+                    rayGraphic.lineTo(point.x, point.y);
                 }
             });
         }
