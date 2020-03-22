@@ -1,19 +1,8 @@
 import React from 'react';
-import { flatMap, reduce, slice, size, last, range, forEach, first, values } from 'lodash';
-import {
-    Edge,
-    Circle,
-    Box,
-    Vec2,
-    World,
-    Body,
-    Polygon,
-    Shape,
-    BodyDef,
-    PolygonShape,
-} from 'planck-js';
+import { flatMap, forEach } from 'lodash';
+import { Edge, Vec2, World, Body, PolygonShape } from 'planck-js';
 import * as PIXI from 'pixi.js';
-import { UserData, Powerup, BodyType } from './types';
+import { BodyType } from './types';
 import { drawBody, drawRays } from './renderHelpers';
 import {
     retinaScale,
@@ -22,18 +11,16 @@ import {
     zoom,
     width,
     height,
-    ballRadius,
-    initialBallVelocity,
     gameData,
     bodyData,
     indexedBodyData,
     graphicsMap,
     rayHelper,
-    ballPosition,
-    ballVelocityMap,
+    stepCallbacksManager,
 } from './state';
-import { transformCanvasCoordinateToPhysical } from './eventHelpers';
-import { createBody, updateBallVelocityMap, setupNextRound } from './physicsHelpers';
+import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
+import { createBody, setupNextRound } from './physicsHelpers';
+import { onBeginContact } from './collisionHelpers';
 
 // TODO:
 // Make a way to call balls back
@@ -44,9 +31,6 @@ import { createBody, updateBallVelocityMap, setupNextRound } from './physicsHelp
 // Add remembering game state
 //
 //
-
-// computed values
-let stepCallbacks: Function[] = [];
 
 // @ts-ignore
 window.gameData = gameData;
@@ -101,85 +85,6 @@ function createGraphicFromBody(body: Body) {
 
 function updateGraphic(body: Body, graphic: PIXI.Graphics) {}
 
-function destroyBody(body: Body, stage: PIXI.Container) {
-    const { id, bodyType } = body.getUserData();
-    body.getWorld().destroyBody(body);
-    delete bodyData[id];
-    delete indexedBodyData[bodyType][id];
-    stage.removeChild(graphicsMap[id]);
-}
-
-function queueStepCallback(cb: () => void) {
-    stepCallbacks.push(cb);
-}
-
-function processStepCallbacks() {
-    stepCallbacks.forEach(cb => cb());
-    stepCallbacks = [];
-}
-
-const onClickFactory = (world: World) => (event: MouseEvent | TouchEvent) => {
-    event.preventDefault();
-    // TODO: This could be updated...
-    rayHelper.resetRay();
-    const { x, y } = transformCanvasCoordinateToPhysical(event);
-    const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
-    trajectory.normalize();
-
-    // TODO: Also update this
-    forEach(ballVelocityMap, (value, key) => delete ballVelocityMap[key]);
-
-    reduce(
-        values(indexedBodyData.ball),
-        async (acc: Promise<any>, ballBody) => {
-            await acc;
-            const velocity = Vec2.mul(trajectory, initialBallVelocity);
-
-            ballBody.setLinearVelocity(velocity);
-            updateBallVelocityMap(ballBody, velocity);
-            return new Promise(resolve => {
-                setTimeout(() => resolve(), 50);
-            });
-        },
-        Promise.resolve(),
-    );
-};
-
-const onMoveFactory = (world: World) => (event: MouseEvent | TouchEvent) => {
-    event.preventDefault();
-    const { x, y } = transformCanvasCoordinateToPhysical(event);
-    const mousePosition = Vec2(x, y);
-    const trajectory = Vec2.sub(mousePosition, ballPosition);
-    trajectory.normalize();
-    const rayLength = height * 0.75;
-
-    const nextPosition = Vec2.add(ballPosition, Vec2.mul(trajectory, rayLength));
-
-    rayHelper.setRay([ballPosition, nextPosition]);
-    world.rayCast(ballPosition, nextPosition, function(fixture, point, normal, fraction) {
-        if (fixture.getBody().getUserData().bodyType === 'powerup') {
-            return -1;
-        }
-        const ray = rayHelper.getRay();
-        // Always start with a fresh ray
-        if (size(ray) > 1) {
-            rayHelper.setRay(slice(ray, 0, 1));
-        }
-        rayHelper.addToRay(point);
-        normal.normalize();
-        const reflectionVector = Vec2.sub(
-            trajectory,
-            Vec2.mul(normal, 2 * Vec2.dot(trajectory, normal)),
-        );
-        reflectionVector.normalize();
-        const nextPoint = Vec2.add(point, Vec2.mul(reflectionVector, rayLength * (1 - fraction)));
-
-        rayHelper.addToRay(nextPoint);
-
-        return fraction;
-    });
-};
-
 // Destroy all the balls
 // Create all the new balls
 // Create the next round of blocks
@@ -232,8 +137,8 @@ export const Scene = () => {
             friction: 0,
         });
 
-        const onClick = onClickFactory(world);
-        const onMove = onMoveFactory(world);
+        const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
+        const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
 
         //PIXI.settings.RESOLUTION = window.devicePixelRatio;
         const app = new PIXI.Application({
@@ -251,6 +156,21 @@ export const Scene = () => {
         app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
         app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
         app.stage.interactive = true;
+        app.renderer.plugins.interaction.on('pointerup', (e: PIXI.interaction.InteractionEvent) => {
+            onClick(e.data.originalEvent);
+        });
+        app.renderer.plugins.interaction.on(
+            'pointerdown',
+            (e: PIXI.interaction.InteractionEvent) => {
+                onMove(e.data.originalEvent);
+            },
+        );
+        app.renderer.plugins.interaction.on('touchend', (e: PIXI.interaction.InteractionEvent) => {
+            onMove(e.data.originalEvent);
+        });
+        app.renderer.plugins.interaction.on('touchmove', (e: PIXI.interaction.InteractionEvent) => {
+            onMove(e.data.originalEvent);
+        });
 
         // Iniital blocks
         setupNextRound(world);
@@ -261,106 +181,14 @@ export const Scene = () => {
         canvas.ontouchmove = onMove;
 
         // Only for physical collision
-        world.on('begin-contact', contact => {
-            const fixtureA = contact.getFixtureA();
-            const fixtureB = contact.getFixtureB();
-
-            const bodyA = fixtureA.getBody();
-            const bodyB = fixtureB.getBody();
-
-            // Find the fixture that is a block
-            const bodyTypeA = bodyA.getUserData().bodyType;
-            const bodyTypeB = bodyB.getUserData().bodyType;
-
-            const wallBody =
-                bodyTypeA === 'wall' ? bodyA : bodyTypeB === 'wall' ? bodyB : undefined;
-
-            const ballBody =
-                bodyTypeA === 'ball' ? bodyA : bodyTypeB === 'ball' ? bodyB : undefined;
-
-            const powerupBody =
-                bodyTypeA === 'powerup' ? bodyA : bodyTypeB === 'powerup' ? bodyB : undefined;
-
-            const blockBody =
-                bodyTypeA === 'block' ? bodyA : bodyTypeB === 'block' ? bodyB : undefined;
-
-            if (ballBody) {
-                const velocityAfterCollision = ballBody.getLinearVelocity();
-                updateBallVelocityMap(ballBody, velocityAfterCollision);
-                const { x, y } = velocityAfterCollision;
-                if (powerupBody) {
-                    const userData = powerupBody.getUserData();
-                    if (userData.powerup === 'addBall') {
-                        console.log('got powerup');
-                        // Set velocity to previous value
-                        ballVelocityMap[ballBody.getUserData().id].pop();
-                        const previousVelocity = last(ballVelocityMap[ballBody.getUserData().id]);
-
-                        // Immediately deactivate this as we wait to destroy this object
-                        powerupBody.setUserData({
-                            ...userData,
-                            active: false,
-                        });
-
-                        if (userData.active) {
-                            gameData.balls++;
-                        }
-
-                        queueStepCallback(() => {
-                            // This should always be set though
-                            if (previousVelocity) {
-                                ballBody.setLinearVelocity(Vec2(previousVelocity));
-                            }
-                            destroyBody(powerupBody, app.stage);
-                        });
-                    }
-                } else if (wallBody) {
-                    if (wallBody.getUserData().isBottomWall) {
-                        // Track the posiition of the first ball that left
-                        if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
-                            ballPosition.x = Math.max(
-                                Math.min(ballBody.getPosition().x, width / 2 - ballRadius * 2),
-                                -width / 2 + ballRadius * 2,
-                            );
-                        }
-                        queueStepCallback(() => {
-                            destroyBody(ballBody, app.stage);
-                            // If after destroying this ball, there are no more
-                            // then start the next round
-                            if (!size(indexedBodyData.ball)) {
-                                setupNextRound(world);
-                            }
-                        });
-                    }
-                    // Edge case handling for when the ball basically stops moving
-                    if (x && Math.abs(y) < Math.abs(0.01)) {
-                        console.log(y, 'reset velocity', ballBody);
-                        ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
-                    }
-                } else if (blockBody) {
-                    const existingData = blockBody.getUserData();
-                    const hitPoints = existingData.hitPoints || 0;
-                    // Destroy the block
-                    if (hitPoints <= 1) {
-                        queueStepCallback(() => destroyBody(blockBody, app.stage));
-                    }
-                    // Decrement the counter
-                    else {
-                        blockBody.setUserData({
-                            ...existingData,
-                            hitPoints: hitPoints - 1,
-                        });
-                    }
-                }
-            }
-        });
+        world.on('begin-contact', onBeginContact(world, app));
 
         // rendering loop
         let prevTime = new Date().getTime();
         (function loop() {
             let newTime = new Date().getTime();
             let elapsedTime = newTime - prevTime;
-            processStepCallbacks();
+            stepCallbacksManager.processStepCallbacks();
 
             world.step(elapsedTime / 1000);
 
@@ -405,7 +233,6 @@ export const Scene = () => {
                 if (graphic) {
                     const bodyPosition = body.getPosition();
                     //graphic.transform.position.set(10, 10);
-                    console.log(graphic.x, bodyPosition.x);
                     graphic.transform.position.set(bodyPosition.x, bodyPosition.y);
                     //graphic.x = bodyPosition.x;
                     //graphic.y = bodyPosition.y;
