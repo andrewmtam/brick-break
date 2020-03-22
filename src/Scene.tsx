@@ -1,5 +1,5 @@
 import React from 'react';
-import { reduce, slice, size, last, range, forEach, first, values } from 'lodash';
+import { flatMap, reduce, slice, size, last, range, forEach, first, values } from 'lodash';
 import {
     Edge,
     Circle,
@@ -12,14 +12,28 @@ import {
     BodyDef,
     PolygonShape,
 } from 'planck-js';
-import { v4 as uuidv4 } from 'uuid';
-
-declare module 'planck-js' {
-    interface Body {
-        getUserData(): UserData;
-        setUserData(data: UserData): void;
-    }
-}
+import * as PIXI from 'pixi.js';
+import { UserData, Powerup, BodyType } from './types';
+import { drawBody, drawRays } from './renderHelpers';
+import {
+    retinaScale,
+    physicalWidth,
+    physicalHeight,
+    zoom,
+    width,
+    height,
+    ballRadius,
+    initialBallVelocity,
+    gameData,
+    bodyData,
+    indexedBodyData,
+    graphicsMap,
+    rayHelper,
+    ballPosition,
+    ballVelocityMap,
+} from './state';
+import { transformCanvasCoordinateToPhysical } from './eventHelpers';
+import { createBody, updateBallVelocityMap, setupNextRound } from './physicsHelpers';
 
 // TODO:
 // Make a way to call balls back
@@ -27,286 +41,72 @@ declare module 'planck-js' {
 //  * clear row
 // Add fast forward button
 // Fix offset for text in triangle
+// Add remembering game state
 //
 //
 
 // computed values
-const retinaScale = 2;
-const physicalWidth = 300;
-const physicalHeight = 500;
-const zoom = 100;
-const width = (physicalWidth / zoom) * retinaScale;
-const height = (physicalHeight / zoom) * retinaScale;
-const blockSize = width / 10;
-const ballRadius = blockSize / 2 / 3;
-const initialBallVelocity = 25;
-const initialBalls = 100;
-const gameData = {
-    round: 0,
-    balls: initialBalls,
-    ballsAtStartOfRound: initialBalls,
-};
-
-enum BodyType {
-    Block = 'block',
-    Ball = 'ball',
-    Wall = 'wall',
-    Powerup = 'powerup',
-}
-
-enum Powerup {
-    AddBall = 'addBall',
-}
-
-interface UserData {
-    id: string;
-    bodyType: BodyType;
-    hitPoints?: number;
-    isBottomWall: boolean;
-    powerup: Powerup;
-    active: boolean;
-}
-
-// This changes based on where we last exited
-const ballPosition = Vec2(0, -height / 2 + ballRadius * 2);
-
-let bodyData: {
-    [bodyId: string]: Body;
-} = {};
-
-let indexedBodyData: {
-    [TKey in BodyType]: { [key: string]: Body };
-} = {
-    block: {},
-    ball: {},
-    wall: {},
-    powerup: {},
-};
-
-let ballVelocityMap: { [id: string]: Vec2[] } = {};
-
 let stepCallbacks: Function[] = [];
 
 // @ts-ignore
 window.gameData = gameData;
 // @ts-ignore
 window.indexedBodyData = indexedBodyData;
+// @ts-ignore
+window.graphicsMap = graphicsMap;
 
-const blockShapes = [
-    Box(blockSize / 2, blockSize / 2),
-    Polygon([
-        Vec2(-blockSize / 2, -blockSize / 2),
-        Vec2(-blockSize / 2, blockSize / 2),
-        Vec2(blockSize / 2, blockSize / 2),
-    ]),
-    Polygon([
-        Vec2(-blockSize / 2, -blockSize / 2),
-        Vec2(-blockSize / 2, blockSize / 2),
-        Vec2(blockSize / 2, -blockSize / 2),
-    ]),
-    Polygon([
-        Vec2(-blockSize / 2, -blockSize / 2),
-        Vec2(blockSize / 2, blockSize / 2),
-        Vec2(blockSize / 2, -blockSize / 2),
-    ]),
-    Polygon([
-        Vec2(-blockSize / 2, blockSize / 2),
-        Vec2(blockSize / 2, blockSize / 2),
-        Vec2(blockSize / 2, -blockSize / 2),
-    ]),
-];
+function createGraphicFromBody(body: Body) {
+    const graphics = new PIXI.Graphics();
 
-function updateBallVelocityMap(ballBody: Body, velocity: Vec2) {
-    const id = ballBody.getUserData().id;
-    if (!ballVelocityMap[id]) {
-        ballVelocityMap[id] = [];
-    }
-    ballVelocityMap[id].push(velocity);
-}
+    const x = body.getPosition().x;
+    const y = body.getPosition().y;
+    const fixtures = body.getFixtureList();
+    if (fixtures) {
+        const shape = fixtures.getShape() as PolygonShape;
+        const vertices = shape.m_vertices;
+        const shapeType = shape.getType();
 
-function getRandomBlockShape() {
-    const randomNum = Math.random();
-    if (randomNum < 0.6) {
-        return blockShapes[0];
-    } else if (randomNum < 0.7) {
-        return blockShapes[1];
-    } else if (randomNum < 0.8) {
-        return blockShapes[2];
-    } else if (randomNum < 0.9) {
-        return blockShapes[3];
-    } else {
-        return blockShapes[4];
-    }
-}
-
-function fillRow(world: World) {
-    const xCoordinates = range(-width / 2 + blockSize, width / 2 - blockSize, blockSize);
-    // Fill a random spot with a ball
-    const idxForBallPowerup = Math.floor(Math.random() * xCoordinates.length);
-    createPowerup(world, {
-        position: Vec2(xCoordinates[idxForBallPowerup], height / 2 - blockSize),
-    });
-
-    // Render blocks
-    forEach(
-        [
-            ...slice(xCoordinates, 0, idxForBallPowerup),
-            ...slice(xCoordinates, idxForBallPowerup + 1),
-        ],
-        xCoordinate => {
-            // New block appears 50% of the time
-            if (Math.random() < 0.5) {
-                const bodyParams = { position: Vec2(xCoordinate, height / 2 - blockSize) };
-                // Start doing triangles!
-                // And also introduce double healthblocks
-                if (gameData.round > 5) {
-                    createBlock({
-                        world,
-                        hasDoubleHitpoints: Math.random() > 0.9,
-                        bodyParams,
-                        shape: getRandomBlockShape(),
-                    });
+        if (shapeType === 'circle') {
+            graphics.lineStyle(0);
+            graphics.beginFill(0xffff0b, 0.5);
+            graphics.drawCircle(0, 0, shape.getRadius());
+            graphics.endFill();
+            graphics.transform.position.set(x, y);
+        } else {
+            graphics.beginFill(0xde3249);
+            console.log({ body });
+            const points = flatMap(vertices, vertex => {
+                const xVertex = vertex.x;
+                const yVertex = vertex.y;
+                return [xVertex, yVertex];
+            });
+            graphics.drawPolygon(points);
+            graphics.transform.position.set(x, y);
+            graphics.endFill();
+            /*
+            vertices.forEach((vertex, idx) => {
+                const x = vertex.x;
+                const y = vertex.y;
+                if (idx === 0) {
+                    graphics.moveTo(x, y);
+                } else {
+                    graphics.lineTo(x, y);
                 }
-                // only blocks please
-                else {
-                    createBlock({ world, bodyParams, shape: blockShapes[0] });
-                }
-            }
-        },
-    );
-    // Iterate over each spot
-    // Add new block
-    // Add plus ball
-    // Add laser
-    // Iniital blocks
-}
-
-function createBlock({
-    world,
-    bodyParams,
-    hasDoubleHitpoints,
-    shape,
-}: {
-    world: World;
-    bodyParams: BodyDef;
-    hasDoubleHitpoints?: boolean;
-    shape: Shape;
-}) {
-    return createBody({
-        world,
-        bodyType: BodyType.Block,
-        bodyParams,
-        userData: {
-            hitPoints: hasDoubleHitpoints ? gameData.round * 2 : gameData.round,
-        },
-    }).createFixture({
-        shape,
-        restitution: 1,
-        friction: 0,
-    });
-}
-
-function createBall(world: World) {
-    return createBody({
-        world,
-        bodyType: BodyType.Ball,
-        bodyParams: {
-            type: 'dynamic',
-            position: ballPosition,
-            bullet: true,
-        },
-    }).createFixture({
-        shape: Circle(ballRadius),
-        restitution: 1,
-        friction: 0,
-        // All balls bust have this filter group because they don't collide with each other
-        // All powerups must also have this filter group because they also don' collied
-        filterGroupIndex: -1,
-    });
-}
-
-function createPowerup(world: World, bodyParams: BodyDef) {
-    const powerup = createBody({
-        world,
-        bodyType: BodyType.Powerup,
-        bodyParams,
-    });
-
-    powerup.createFixture({
-        shape: Circle(ballRadius),
-        restitution: 1,
-        friction: 0,
-        isSensor: true,
-    });
-
-    powerup.setUserData({
-        ...powerup.getUserData(),
-        powerup: 'addBall',
-        active: true,
-    });
-
-    return powerup;
-}
-
-function setupNextRound(world: World) {
-    // Recreate all the balls now
-
-    forEach(range(0, gameData.balls), () => createBall(world));
-    forEach(indexedBodyData.ball, ballBlock => {
-        ballBlock.setLinearVelocity(Vec2(0, 0));
-        ballBlock.setPosition(ballPosition);
-    });
-
-    // Increment the level
-    gameData.round++;
-
-    // Move all existing blocks down 1 row
-    forEach(indexedBodyData.block, (body: Body) => {
-        body.setPosition(Vec2.add(body.getPosition(), Vec2(0, -blockSize)));
-    });
-
-    // Move all existing powerups down 1 row
-    forEach(indexedBodyData.powerup, (body: Body) => {
-        body.setPosition(Vec2.add(body.getPosition(), Vec2(0, -blockSize)));
-    });
-
-    // Add a new row of blocks
-    // and other stuffs
-    fillRow(world);
-
-    gameData.ballsAtStartOfRound = gameData.balls;
-}
-
-function createBody({
-    world,
-    bodyType,
-    bodyParams,
-    userData,
-}: {
-    world: World;
-    bodyType: BodyType;
-    bodyParams?: BodyDef;
-    userData?: Partial<UserData>;
-}): Body {
-    const body = bodyParams ? world.createBody(bodyParams) : world.createBody();
-    const id = uuidv4();
-    body.setUserData({ ...userData, id, bodyType });
-    bodyData[id] = body;
-
-    // For easier access to all bodies
-    if (!indexedBodyData[bodyType]) {
-        indexedBodyData[bodyType] = {};
+            });
+                 */
+        }
     }
-    indexedBodyData[bodyType][id] = body;
-
-    return body;
+    return graphics;
 }
 
-function destroyBody(body: Body) {
+function updateGraphic(body: Body, graphic: PIXI.Graphics) {}
+
+function destroyBody(body: Body, stage: PIXI.Container) {
     const { id, bodyType } = body.getUserData();
     body.getWorld().destroyBody(body);
     delete bodyData[id];
     delete indexedBodyData[bodyType][id];
+    stage.removeChild(graphicsMap[id]);
 }
 
 function queueStepCallback(cb: () => void) {
@@ -318,34 +118,67 @@ function processStepCallbacks() {
     stepCallbacks = [];
 }
 
-function transformMouseEvent(event: MouseEvent): { x: any; y: any } {
-    const { offsetX, offsetY } = event;
-    return { x: offsetX, y: offsetY };
-}
+const onClickFactory = (world: World) => (event: MouseEvent | TouchEvent) => {
+    event.preventDefault();
+    // TODO: This could be updated...
+    rayHelper.resetRay();
+    const { x, y } = transformCanvasCoordinateToPhysical(event);
+    const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
+    trajectory.normalize();
 
-function transformTouchEvent(event: TouchEvent): { x: any; y: any } {
-    const target = event.target as HTMLElement;
-    if (target) {
-        const rect = target.getBoundingClientRect();
-        const { x, y } = {
-            x: ((first(event.touches) || first(event.changedTouches))?.clientX || 0) - rect.left,
-            y: ((first(event.touches) || first(event.changedTouches))?.clientY || 0) - rect.top,
-        };
-        return { x, y };
-    }
-    return { x: 0, y: 0 };
-}
-function transformCanvasCoordinateToPhysical(event: MouseEvent | TouchEvent) {
-    const { x, y } =
-        event.constructor.name === 'TouchEvent'
-            ? transformTouchEvent(event as TouchEvent)
-            : transformMouseEvent(event as MouseEvent);
+    // TODO: Also update this
+    forEach(ballVelocityMap, (value, key) => delete ballVelocityMap[key]);
 
-    return {
-        x: (x / zoom) * retinaScale - width / 2,
-        y: (-y / zoom) * retinaScale + height / 2,
-    };
-}
+    reduce(
+        values(indexedBodyData.ball),
+        async (acc: Promise<any>, ballBody) => {
+            await acc;
+            const velocity = Vec2.mul(trajectory, initialBallVelocity);
+
+            ballBody.setLinearVelocity(velocity);
+            updateBallVelocityMap(ballBody, velocity);
+            return new Promise(resolve => {
+                setTimeout(() => resolve(), 50);
+            });
+        },
+        Promise.resolve(),
+    );
+};
+
+const onMoveFactory = (world: World) => (event: MouseEvent | TouchEvent) => {
+    event.preventDefault();
+    const { x, y } = transformCanvasCoordinateToPhysical(event);
+    const mousePosition = Vec2(x, y);
+    const trajectory = Vec2.sub(mousePosition, ballPosition);
+    trajectory.normalize();
+    const rayLength = height * 0.75;
+
+    const nextPosition = Vec2.add(ballPosition, Vec2.mul(trajectory, rayLength));
+
+    rayHelper.setRay([ballPosition, nextPosition]);
+    world.rayCast(ballPosition, nextPosition, function(fixture, point, normal, fraction) {
+        if (fixture.getBody().getUserData().bodyType === 'powerup') {
+            return -1;
+        }
+        const ray = rayHelper.getRay();
+        // Always start with a fresh ray
+        if (size(ray) > 1) {
+            rayHelper.setRay(slice(ray, 0, 1));
+        }
+        rayHelper.addToRay(point);
+        normal.normalize();
+        const reflectionVector = Vec2.sub(
+            trajectory,
+            Vec2.mul(normal, 2 * Vec2.dot(trajectory, normal)),
+        );
+        reflectionVector.normalize();
+        const nextPoint = Vec2.add(point, Vec2.mul(reflectionVector, rayLength * (1 - fraction)));
+
+        rayHelper.addToRay(nextPoint);
+
+        return fraction;
+    });
+};
 
 // Destroy all the balls
 // Create all the new balls
@@ -363,9 +196,8 @@ export const Scene = () => {
             return;
         }
         const ctx = canvas.getContext('2d');
-        let ray: Vec2[] = [];
 
-        var world = new World(Vec2(0, 0));
+        const world = new World(Vec2(0, 0));
 
         // Create walls, but we don't need to draw them on the canvas
         // Left wall
@@ -400,70 +232,28 @@ export const Scene = () => {
             friction: 0,
         });
 
+        const onClick = onClickFactory(world);
+        const onMove = onMoveFactory(world);
+
+        //PIXI.settings.RESOLUTION = window.devicePixelRatio;
+        const app = new PIXI.Application({
+            antialias: true,
+            width: physicalWidth,
+            height: physicalHeight,
+        });
+        document.body.appendChild(app.view);
+        // TODO: Blurry
+        // TODO: Remove images
+
+        const graphics = new PIXI.Graphics();
+        // Rectangle
+        app.stage.addChild(graphics);
+        app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
+        app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
+        app.stage.interactive = true;
+
         // Iniital blocks
         setupNextRound(world);
-
-        function onClick(event: MouseEvent | TouchEvent) {
-            event.preventDefault();
-            ray = [];
-            const { x, y } = transformCanvasCoordinateToPhysical(event);
-            const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
-            trajectory.normalize();
-
-            ballVelocityMap = {};
-
-            reduce(
-                values(indexedBodyData.ball),
-                async (acc: Promise<any>, ballBody) => {
-                    await acc;
-                    const velocity = Vec2.mul(trajectory, initialBallVelocity);
-
-                    ballBody.setLinearVelocity(velocity);
-                    updateBallVelocityMap(ballBody, velocity);
-                    return new Promise(resolve => {
-                        setTimeout(() => resolve(), 50);
-                    });
-                },
-                Promise.resolve(),
-            );
-        }
-
-        function onMove(event: MouseEvent | TouchEvent) {
-            event.preventDefault();
-            const { x, y } = transformCanvasCoordinateToPhysical(event);
-            const mousePosition = Vec2(x, y);
-            const trajectory = Vec2.sub(mousePosition, ballPosition);
-            trajectory.normalize();
-            const rayLength = height * 0.75;
-
-            const nextPosition = Vec2.add(ballPosition, Vec2.mul(trajectory, rayLength));
-
-            ray = [ballPosition, nextPosition];
-            world.rayCast(ballPosition, nextPosition, function(fixture, point, normal, fraction) {
-                if (fixture.getBody().getUserData().bodyType === 'powerup') {
-                    return -1;
-                }
-                // Always start with a fresh ray
-                if (size(ray) > 1) {
-                    ray = slice(ray, 0, 1);
-                }
-                ray.push(point);
-                normal.normalize();
-                const reflectionVector = Vec2.sub(
-                    trajectory,
-                    Vec2.mul(normal, 2 * Vec2.dot(trajectory, normal)),
-                );
-                reflectionVector.normalize();
-                const nextPoint = Vec2.add(
-                    point,
-                    Vec2.mul(reflectionVector, rayLength * (1 - fraction)),
-                );
-
-                ray.push(nextPoint);
-
-                return fraction;
-            });
-        }
 
         canvas.onclick = onClick;
         canvas.ontouchend = onClick;
@@ -521,7 +311,7 @@ export const Scene = () => {
                             if (previousVelocity) {
                                 ballBody.setLinearVelocity(Vec2(previousVelocity));
                             }
-                            destroyBody(powerupBody);
+                            destroyBody(powerupBody, app.stage);
                         });
                     }
                 } else if (wallBody) {
@@ -534,7 +324,7 @@ export const Scene = () => {
                             );
                         }
                         queueStepCallback(() => {
-                            destroyBody(ballBody);
+                            destroyBody(ballBody, app.stage);
                             // If after destroying this ball, there are no more
                             // then start the next round
                             if (!size(indexedBodyData.ball)) {
@@ -552,7 +342,7 @@ export const Scene = () => {
                     const hitPoints = existingData.hitPoints || 0;
                     // Destroy the block
                     if (hitPoints <= 1) {
-                        queueStepCallback(() => destroyBody(blockBody));
+                        queueStepCallback(() => destroyBody(blockBody, app.stage));
                     }
                     // Decrement the counter
                     else {
@@ -583,10 +373,6 @@ export const Scene = () => {
             prevTime = new Date().getTime();
         })();
 
-        function transformPhysicsCoordinateToCanvasCoordinate(value: number) {
-            return value * zoom;
-        }
-
         function render(ctx: CanvasRenderingContext2D) {
             // Clear the canvas
             // The canvas should be twice as big, to account for retina stuffs
@@ -605,87 +391,30 @@ export const Scene = () => {
             forEach(indexedBodyData.powerup, powerup => drawBody(ctx, powerup, 'red'));
             forEach(indexedBodyData.block, block => drawBody(ctx, block, 'purple'));
             forEach(indexedBodyData.ball, ball => drawBody(ctx, ball, 'green'));
-            drawRays(ctx, ray);
+            drawRays(ctx, rayHelper.getRay());
 
             ctx.restore();
-        }
 
-        function drawRays(ctx: CanvasRenderingContext2D, ray: Vec2[]) {
-            ctx.save();
-
-            ctx.beginPath();
-            ray.forEach((vertex, idx) => {
-                const x = transformPhysicsCoordinateToCanvasCoordinate(vertex.x);
-                const y = transformPhysicsCoordinateToCanvasCoordinate(vertex.y);
-                if (idx === 0) {
-                    ctx.moveTo(x, y);
+            // PIXI stuffs
+            forEach(bodyData, (body, id) => {
+                const userData = body.getUserData();
+                if (userData.bodyType === BodyType.Wall) {
+                    return;
+                }
+                const graphic = graphicsMap[id];
+                if (graphic) {
+                    const bodyPosition = body.getPosition();
+                    //graphic.transform.position.set(10, 10);
+                    console.log(graphic.x, bodyPosition.x);
+                    graphic.transform.position.set(bodyPosition.x, bodyPosition.y);
+                    //graphic.x = bodyPosition.x;
+                    //graphic.y = bodyPosition.y;
                 } else {
-                    ctx.lineTo(x, y);
+                    const graphic = createGraphicFromBody(body);
+                    graphicsMap[userData.id] = graphic;
+                    app.stage.addChild(graphic);
                 }
             });
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.closePath();
-            ctx.restore();
-        }
-
-        function drawBody(ctx: CanvasRenderingContext2D, body: Body, fillStyle = 'black') {
-            const x = transformPhysicsCoordinateToCanvasCoordinate(body.getPosition().x);
-            const y = transformPhysicsCoordinateToCanvasCoordinate(body.getPosition().y);
-            const fixtures = body.getFixtureList();
-            if (fixtures) {
-                const shape = fixtures.getShape() as PolygonShape;
-                const vertices = shape.m_vertices;
-                const shapeType = shape.getType();
-                const rotation = body.getAngle();
-
-                ctx.fillStyle = fillStyle;
-                ctx.save();
-
-                ctx.translate(x, y); // Translate to the position of the box
-                ctx.rotate(rotation); // Rotate to the box body frame
-                if (shapeType === 'circle') {
-                    ctx.beginPath();
-                    ctx.arc(
-                        0,
-                        0,
-                        transformPhysicsCoordinateToCanvasCoordinate(shape.getRadius()),
-                        0,
-                        Math.PI * 2,
-                    );
-                    ctx.closePath();
-                } else {
-                    ctx.beginPath();
-                    vertices.forEach((vertex, idx) => {
-                        const x = transformPhysicsCoordinateToCanvasCoordinate(vertex.x);
-                        const y = transformPhysicsCoordinateToCanvasCoordinate(vertex.y);
-                        if (idx === 0) {
-                            ctx.moveTo(x, y);
-                        } else {
-                            ctx.lineTo(x, y);
-                        }
-                    });
-                    ctx.closePath();
-                }
-                ctx.fill();
-                // Add text for blocks
-                if (body.getUserData().bodyType === 'block') {
-                    // Reset the zoom
-                    ctx.fillStyle = 'white';
-                    // TODO: Make this dynamic properly
-                    ctx.font = `24px serif`;
-                    //ctx.translate(x * zoom, y * zoom); // Translate to the position of the box
-                    ctx.rotate(-Math.PI); // Rotate to the box body frame
-
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-
-                    ctx.scale(-1, 1); // Zoom in and flip y axis
-                    ctx.fillText(body.getUserData().hitPoints + '', 0, blockSize / 4);
-                }
-                ctx.restore();
-            }
         }
     });
 
