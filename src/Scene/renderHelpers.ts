@@ -172,11 +172,31 @@ export function renderToPixi(app: PIXI.Application, rayGraphic: PIXI.Graphics) {
             //graphic.y = bodyPosition.y;
         }
         if (textGraphic && bodyType === BodyType.Block) {
-            textGraphic.text = hitPoints + '';
-            textGraphic.position.set(
-                bodyPosition.x - textGraphic.width / 2,
-                bodyPosition.y + textGraphic.height / 2,
-            );
+            const fixtureList = body.getFixtureList();
+            if (fixtureList) {
+                textGraphic.text = hitPoints + '';
+                const shape = fixtureList.getShape() as PolygonShape;
+                const centerX = bodyPosition.x - textGraphic.width / 2;
+                const centerY = bodyPosition.y + textGraphic.height / 2;
+                // It is a square
+                if (shape.m_vertices.length === 4) {
+                    textGraphic.position.set(centerX, centerY);
+                }
+                // It is a triangle
+                else {
+                    const centroid = shape.m_centroid;
+                    const offset = blockSize / 4;
+                    if (centroid.x > 0 && centroid.y > 0) {
+                        textGraphic.position.set(centerX + offset, centerY + offset);
+                    } else if (centroid.x > 0 && centroid.y < 0) {
+                        textGraphic.position.set(centerX + offset, centerY - offset);
+                    } else if (centroid.x < 0 && centroid.y > 0) {
+                        textGraphic.position.set(centerX - offset, centerY + offset);
+                    } else {
+                        textGraphic.position.set(centerX - offset, centerY - offset);
+                    }
+                }
+            }
         }
     });
     // Also draw the rays
@@ -189,27 +209,3 @@ export function renderToPixi(app: PIXI.Application, rayGraphic: PIXI.Graphics) {
         }
     });
 }
-
-/*
-function renderText(graphic: PIXI.Graphics, text: string) {
-    const style = new PIXI.TextStyle({
-        align: 'center',
-        textBaseline: 'middle',
-        fontFamily: 'Arial',
-        fontSize: 24,
-        fontWeight: 'bold',
-        fill: ['#ffffff', '#00ff99'], // gradient
-        stroke: '#4a1850',
-        strokeThickness: 1,
-        wordWrap: true,
-        wordWrapWidth: 440,
-    });
-
-    const richText = new PIXI.Text(text, style);
-    richText.x = 0;
-    richText.y = 0;
-
-    richText.scale.set(1 / zoom, -1 / zoom);
-    app.stage.addChild(richText);
-}
-     */

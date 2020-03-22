@@ -23,20 +23,21 @@ export function updateBallVelocityMap(ballBody: Body, velocity: Vec2) {
 
 const blockShapes = [
     Box(blockSize / 2, blockSize / 2),
+    // Middle vertex indicates corner!
     Polygon([
         Vec2(-blockSize / 2, -blockSize / 2),
         Vec2(-blockSize / 2, blockSize / 2),
         Vec2(blockSize / 2, blockSize / 2),
     ]),
     Polygon([
-        Vec2(-blockSize / 2, -blockSize / 2),
         Vec2(-blockSize / 2, blockSize / 2),
+        Vec2(-blockSize / 2, -blockSize / 2),
         Vec2(blockSize / 2, -blockSize / 2),
     ]),
     Polygon([
         Vec2(-blockSize / 2, -blockSize / 2),
-        Vec2(blockSize / 2, blockSize / 2),
         Vec2(blockSize / 2, -blockSize / 2),
+        Vec2(blockSize / 2, blockSize / 2),
     ]),
     Polygon([
         Vec2(-blockSize / 2, blockSize / 2),
@@ -80,7 +81,7 @@ export function fillRow(world: World) {
                 const bodyParams = { position: Vec2(xCoordinate, height / 2 - blockSize) };
                 // Start doing triangles!
                 // And also introduce double healthblocks
-                if (gameData.round > 5) {
+                if (gameData.round > 1) {
                     createBlock({
                         world,
                         hasDoubleHitpoints: Math.random() > 0.9,

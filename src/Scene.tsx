@@ -189,8 +189,8 @@ export const Scene = () => {
     return (
         <div>
             <span>Text</span>
-            <canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
             <canvas ref={pixiRef} style={style} />
+            (<canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
         </div>
     );
 };
