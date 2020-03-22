@@ -1,8 +1,9 @@
 import React from 'react';
+import { noop } from 'lodash';
 import { Edge, Vec2, World } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { BodyType } from './Scene/types';
-import { renderToPixi, renderToCanvas } from './Scene/renderHelpers';
+import { renderToPixi, setupCanvas } from './Scene/renderHelpers';
 import {
     retinaScale,
     physicalWidth,
@@ -50,17 +51,12 @@ window.graphicsMap = graphicsMap;
 // Sometimes there are blasters
 export const Scene = () => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
-    const pixiRef = React.useRef<HTMLCanvasElement>(null);
+    const pixiRef = React.useRef<HTMLDivElement>(null);
     React.useEffect(() => {
-        const canvas = canvasRef.current;
         const pixiContainer = pixiRef.current;
-        if (!canvas) {
-            return;
-        }
         if (!pixiContainer) {
             return;
         }
-        const ctx = canvas.getContext('2d');
 
         const world = new World(Vec2(0, 0));
 
@@ -69,8 +65,15 @@ export const Scene = () => {
             antialias: true,
             width: physicalWidth,
             height: physicalHeight,
-            view: pixiContainer,
+            resizeTo: pixiContainer,
         });
+
+        pixiContainer.append(app.view);
+        app.view.style.width = '100%';
+        app.view.style.height = '100%';
+
+        const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
+        const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
 
         app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
         app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
@@ -164,16 +167,10 @@ export const Scene = () => {
                 }),
         });
 
-        const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
-        const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
-
         // Iniital blocks
         setupNextRound(world);
 
-        canvas.onclick = onClick;
-        canvas.ontouchend = onClick;
-        canvas.onmousemove = onMove;
-        canvas.ontouchmove = onMove;
+        const canvasRenderer = canvasRef.current ? setupCanvas(world, canvasRef.current) : noop;
 
         // rendering loop
         let prevTime = new Date().getTime();
@@ -184,9 +181,7 @@ export const Scene = () => {
 
             world.step(elapsedTime / 1000);
 
-            if (ctx) {
-                renderToCanvas(ctx);
-            }
+            canvasRenderer();
             renderToPixi(app, rayGraphic, ballText);
 
             // request a new frame
@@ -203,8 +198,8 @@ export const Scene = () => {
 
     return (
         <div>
-            <canvas ref={pixiRef} style={style} />
-            <canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
+            <div ref={pixiRef} style={style} />
+            {/*<canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />*/}
         </div>
     );
 };

@@ -1,6 +1,6 @@
-import { Body, Vec2, PolygonShape } from 'planck-js';
+import { Body, World, Vec2, PolygonShape } from 'planck-js';
 import * as PIXI from 'pixi.js';
-import { flatMap, forEach } from 'lodash';
+import { noop, flatMap, forEach } from 'lodash';
 import { BodyType } from './types';
 import {
     gameData,
@@ -16,6 +16,8 @@ import {
     ballPosition,
     ballRadius,
 } from './state';
+
+import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
 
 function transformPhysicsCoordinateToCanvasCoordinate(value: number) {
     return value * zoom;
@@ -223,4 +225,17 @@ export function renderToPixi(
         ballPosition.x - ballText.width / 2,
         ballPosition.y + ballRadius * 3 + ballText.height / 2,
     );
+}
+
+export function setupCanvas(world: World, canvas: HTMLCanvasElement) {
+    const ctx = canvas.getContext('2d');
+    const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
+    const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
+
+    canvas.onclick = onClick;
+    canvas.ontouchend = onClick;
+    canvas.onmousemove = onMove;
+    canvas.ontouchmove = onMove;
+
+    return () => (ctx ? renderToCanvas(ctx) : noop);
 }
