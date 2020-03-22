@@ -1,8 +1,8 @@
 import React from 'react';
 import { Edge, Vec2, World, Body } from 'planck-js';
 import * as PIXI from 'pixi.js';
-import { BodyType } from './types';
-import { renderToPixi, renderToCanvas } from './renderHelpers';
+import { BodyType } from './Scene/types';
+import { renderToPixi, renderToCanvas } from './Scene/renderHelpers';
 import {
     retinaScale,
     physicalWidth,
@@ -15,10 +15,14 @@ import {
     graphicsMap,
     stepCallbacksManager,
     bodyData,
-} from './state';
-import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
-import { createBody, setupNextRound } from './physicsHelpers';
-import { onBeginContact, onRemoveBody, onAddBody } from './worldHooks';
+} from './Scene/state';
+import {
+    transformCanvasCoordinateToPhysical,
+    onClickFactory,
+    onMoveFactory,
+} from './Scene/eventHelpers';
+import { createBody, setupNextRound } from './Scene/physicsHelpers';
+import { onBeginContact, onRemoveBody, onAddBody } from './Scene/worldHooks';
 
 // TODO:
 // Make a way to call balls back
