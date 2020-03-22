@@ -1,7 +1,19 @@
 import { Body, Vec2, PolygonShape } from 'planck-js';
 import * as PIXI from 'pixi.js';
-import { flatMap } from 'lodash';
-import { zoom, blockSize } from './state';
+import { flatMap, forEach } from 'lodash';
+import { BodyType } from './types';
+import {
+    zoom,
+    blockSize,
+    physicalWidth,
+    physicalHeight,
+    retinaScale,
+    rayHelper,
+    indexedBodyData,
+    bodyData,
+    graphicsMap,
+    ballPosition,
+} from './state';
 
 function transformPhysicsCoordinateToCanvasCoordinate(value: number) {
     return value * zoom;
@@ -117,3 +129,81 @@ export function createGraphicFromBody(body: Body) {
     return graphics;
 }
 
+export function renderToCanvas(ctx: CanvasRenderingContext2D) {
+    // Clear the canvas
+    // The canvas should be twice as big, to account for retina stuffs
+    ctx.clearRect(0, 0, physicalWidth * retinaScale, physicalHeight * retinaScale);
+
+    // Transform the canvas
+    // Note that we need to flip the y axis since Canvas pixel coordinates
+    // goes from top to bottom, while physics does the opposite.
+    ctx.save();
+    ctx.translate((physicalWidth * retinaScale) / 2, (physicalHeight * retinaScale) / 2); // Translate to the center
+    ctx.scale(1, -1); // Zoom in and flip y axis
+
+    // Draw all bodies
+    ctx.strokeStyle = 'none';
+
+    forEach(indexedBodyData.powerup, powerup => drawBody(ctx, powerup, 'red'));
+    forEach(indexedBodyData.block, block => drawBody(ctx, block, 'purple'));
+    forEach(indexedBodyData.ball, ball => drawBody(ctx, ball, 'green'));
+    drawRays(ctx, rayHelper.getRay());
+
+    ctx.restore();
+}
+
+// TODO:raygraphic shouldn't be here
+export function renderToPixi(app: PIXI.Application, rayGraphic: PIXI.Graphics) {
+    // PIXI stuffs
+    forEach(bodyData, (body, id) => {
+        const userData = body.getUserData();
+        if (userData.bodyType === BodyType.Wall) {
+            return;
+        }
+        const graphic = graphicsMap[id];
+        if (graphic) {
+            const bodyPosition = body.getPosition();
+            //graphic.transform.position.set(10, 10);
+            graphic.transform.position.set(bodyPosition.x, bodyPosition.y);
+            //graphic.x = bodyPosition.x;
+            //graphic.y = bodyPosition.y;
+        } else {
+            const graphic = createGraphicFromBody(body);
+            graphicsMap[userData.id] = graphic;
+            app.stage.addChild(graphic);
+        }
+    });
+    // Also draw the rays
+    rayGraphic.clear();
+    forEach(rayHelper.getRay(), (point, idx) => {
+        if (idx === 0) {
+            rayGraphic.lineStyle(2 / zoom, 0xffffff).moveTo(ballPosition.x, ballPosition.y);
+        } else {
+            rayGraphic.lineTo(point.x, point.y);
+        }
+    });
+}
+
+/*
+function renderText(graphic: PIXI.Graphics, text: string) {
+    const style = new PIXI.TextStyle({
+        align: 'center',
+        textBaseline: 'middle',
+        fontFamily: 'Arial',
+        fontSize: 24,
+        fontWeight: 'bold',
+        fill: ['#ffffff', '#00ff99'], // gradient
+        stroke: '#4a1850',
+        strokeThickness: 1,
+        wordWrap: true,
+        wordWrapWidth: 440,
+    });
+
+    const richText = new PIXI.Text(text, style);
+    richText.x = 0;
+    richText.y = 0;
+
+    richText.scale.set(1 / zoom, -1 / zoom);
+    app.stage.addChild(richText);
+}
+     */

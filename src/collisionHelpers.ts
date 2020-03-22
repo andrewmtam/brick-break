@@ -1,7 +1,7 @@
 import { Contact, Vec2, World } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { last, size } from 'lodash';
-import { destroyBody, updateBallVelocityMap, setupNextRound } from './physicsHelpers';
+import { updateBallVelocityMap, setupNextRound } from './physicsHelpers';
 import {
     gameData,
     ballVelocityMap,
@@ -58,7 +58,7 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
                     if (previousVelocity) {
                         ballBody.setLinearVelocity(Vec2(previousVelocity));
                     }
-                    destroyBody(powerupBody, app.stage);
+                    powerupBody.getWorld().destroyBody(powerupBody);
                 });
             }
         } else if (wallBody) {
@@ -71,7 +71,7 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
                     );
                 }
                 stepCallbacksManager.queueStepCallback(() => {
-                    destroyBody(ballBody, app.stage);
+                    ballBody.getWorld().destroyBody(ballBody);
                     // If after destroying this ball, there are no more
                     // then start the next round
                     if (!size(indexedBodyData.ball)) {
@@ -89,7 +89,9 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
             const hitPoints = existingData.hitPoints || 0;
             // Destroy the block
             if (hitPoints <= 1) {
-                stepCallbacksManager.queueStepCallback(() => destroyBody(blockBody, app.stage));
+                stepCallbacksManager.queueStepCallback(() =>
+                    blockBody.getWorld().destroyBody(blockBody),
+                );
             }
             // Decrement the counter
             else {

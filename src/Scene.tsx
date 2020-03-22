@@ -1,9 +1,8 @@
 import React from 'react';
-import { flatMap, forEach } from 'lodash';
-import { Edge, Vec2, World, Body, PolygonShape } from 'planck-js';
+import { Edge, Vec2, World, Body } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { BodyType } from './types';
-import { drawBody, drawRays, createGraphicFromBody } from './renderHelpers';
+import { renderToPixi, renderToCanvas } from './renderHelpers';
 import {
     retinaScale,
     physicalWidth,
@@ -12,12 +11,10 @@ import {
     width,
     height,
     gameData,
-    bodyData,
     indexedBodyData,
     graphicsMap,
-    rayHelper,
     stepCallbacksManager,
-    ballPosition,
+    bodyData,
 } from './state';
 import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
 import { createBody, setupNextRound } from './physicsHelpers';
@@ -39,8 +36,6 @@ window.gameData = gameData;
 window.indexedBodyData = indexedBodyData;
 // @ts-ignore
 window.graphicsMap = graphicsMap;
-
-function updateGraphic(body: Body, graphic: PIXI.Graphics) {}
 
 // Destroy all the balls
 // Create all the new balls
@@ -131,30 +126,6 @@ export const Scene = () => {
         const rayGraphic = new PIXI.Graphics();
         app.stage.addChild(rayGraphic);
 
-        const style = new PIXI.TextStyle({
-            align: 'center',
-            textBaseline: 'middle',
-            fontFamily: 'Arial',
-            fontSize: 24,
-            fontWeight: 'bold',
-            fill: ['#ffffff', '#00ff99'], // gradient
-            stroke: '#4a1850',
-            strokeThickness: 1,
-            wordWrap: true,
-            wordWrapWidth: 440,
-        });
-
-        const richText = new PIXI.Text(
-            'Rich text with a lot of options and across multiple lines',
-            style,
-        );
-        console.log(richText.width, richText.height);
-        richText.x = 0;
-        richText.y = 0;
-
-        richText.scale.set(1 / zoom, -1 / zoom);
-        app.stage.addChild(richText);
-
         // Iniital blocks
         setupNextRound(world);
 
@@ -165,6 +136,12 @@ export const Scene = () => {
 
         // Only for physical collision
         world.on('begin-contact', onBeginContact(world, app));
+        world.on('remove-body', body => {
+            const { id, bodyType } = body.getUserData();
+            delete bodyData[id];
+            delete indexedBodyData[bodyType][id];
+            app.stage.removeChild(graphicsMap[id]);
+        });
 
         // rendering loop
         let prevTime = new Date().getTime();
@@ -176,65 +153,14 @@ export const Scene = () => {
             world.step(elapsedTime / 1000);
 
             if (ctx) {
-                render(ctx);
+                renderToCanvas(ctx);
             }
+            renderToPixi(app, rayGraphic);
 
             // request a new frame
             window.requestAnimationFrame(loop);
             prevTime = new Date().getTime();
         })();
-
-        function render(ctx: CanvasRenderingContext2D) {
-            // Clear the canvas
-            // The canvas should be twice as big, to account for retina stuffs
-            ctx.clearRect(0, 0, physicalWidth * retinaScale, physicalHeight * retinaScale);
-
-            // Transform the canvas
-            // Note that we need to flip the y axis since Canvas pixel coordinates
-            // goes from top to bottom, while physics does the opposite.
-            ctx.save();
-            ctx.translate((physicalWidth * retinaScale) / 2, (physicalHeight * retinaScale) / 2); // Translate to the center
-            ctx.scale(1, -1); // Zoom in and flip y axis
-
-            // Draw all bodies
-            ctx.strokeStyle = 'none';
-
-            forEach(indexedBodyData.powerup, powerup => drawBody(ctx, powerup, 'red'));
-            forEach(indexedBodyData.block, block => drawBody(ctx, block, 'purple'));
-            forEach(indexedBodyData.ball, ball => drawBody(ctx, ball, 'green'));
-            drawRays(ctx, rayHelper.getRay());
-
-            ctx.restore();
-
-            // PIXI stuffs
-            forEach(bodyData, (body, id) => {
-                const userData = body.getUserData();
-                if (userData.bodyType === BodyType.Wall) {
-                    return;
-                }
-                const graphic = graphicsMap[id];
-                if (graphic) {
-                    const bodyPosition = body.getPosition();
-                    //graphic.transform.position.set(10, 10);
-                    graphic.transform.position.set(bodyPosition.x, bodyPosition.y);
-                    //graphic.x = bodyPosition.x;
-                    //graphic.y = bodyPosition.y;
-                } else {
-                    const graphic = createGraphicFromBody(body);
-                    graphicsMap[userData.id] = graphic;
-                    app.stage.addChild(graphic);
-                }
-            });
-            // Also draw the rays
-            rayGraphic.clear();
-            forEach(rayHelper.getRay(), (point, idx) => {
-                if (idx === 0) {
-                    rayGraphic.lineStyle(2 / zoom, 0xffffff).moveTo(ballPosition.x, ballPosition.y);
-                } else {
-                    rayGraphic.lineTo(point.x, point.y);
-                }
-            });
-        }
     });
 
     const style = {

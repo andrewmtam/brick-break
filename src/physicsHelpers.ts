@@ -224,11 +224,3 @@ export function createBody({
 
     return body;
 }
-
-export function destroyBody(body: Body, stage: PIXI.Container) {
-    const { id, bodyType } = body.getUserData();
-    body.getWorld().destroyBody(body);
-    delete bodyData[id];
-    delete indexedBodyData[bodyType][id];
-    stage.removeChild(graphicsMap[id]);
-}
