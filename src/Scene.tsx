@@ -15,6 +15,7 @@ import {
     indexedBodyData,
     graphicsMap,
     stepCallbacksManager,
+    resetGameData,
 } from './Scene/state';
 import {
     transformCanvasCoordinateToPhysical,
@@ -49,7 +50,7 @@ window.graphicsMap = graphicsMap;
 // Sometimes squares are double value
 // Sometimes there are +1 balls
 // Sometimes there are blasters
-export const Scene = () => {
+export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const pixiRef = React.useRef<HTMLDivElement>(null);
     React.useEffect(() => {
@@ -168,7 +169,14 @@ export const Scene = () => {
         });
 
         // Iniital blocks
-        setupNextRound(world);
+        if (restoreFromState) {
+            // Need to capture all of the block locations
+            // Given the gameData, and the block/ball/powertup locations,
+            // generate the next board
+        } else {
+            resetGameData();
+            setupNextRound(world);
+        }
 
         const canvasRenderer = canvasRef.current ? setupCanvas(world, canvasRef.current) : noop;
 
@@ -192,14 +200,10 @@ export const Scene = () => {
 
     const style = {
         border: '1px solid black',
-        width: `${physicalWidth}px`,
-        height: `${physicalHeight}px`,
+        width: '100%',
+        height: '100%',
     };
 
-    return (
-        <div>
-            <div ref={pixiRef} style={style} />
-            {/*<canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />*/}
-        </div>
-    );
+    //<canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
+    return <div ref={pixiRef} style={style} />;
 };

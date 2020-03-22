@@ -25,6 +25,8 @@ const GlobalStyle = createGlobalStyle`
 
 const StyledContent = styled.div`
     overflow: auto;
+    width: 100%;
+    flex: 1;
 `;
 
 function App() {
@@ -34,9 +36,12 @@ function App() {
             <Header />
             <StyledContent>
                 <Switch>
-                    <Route path="/game">
-                        <Scene />
-                    </Route>
+                    <Route
+                        path="/game"
+                        render={props => (
+                            <Scene restoreFromState={props.location.state.restoreFromState} />
+                        )}
+                    ></Route>
                     <Route path="/">This is hte main content</Route>
                 </Switch>
             </StyledContent>

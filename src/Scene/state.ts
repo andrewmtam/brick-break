@@ -9,12 +9,25 @@ export const height = (physicalHeight / zoom) * retinaScale;
 export const blockSize = width / 10;
 export const ballRadius = blockSize / 2 / 3;
 export const initialBallVelocity = 50;
+
 const initialBalls = 1;
-export const gameData = {
+export const gameData: {
+    round: number;
+    balls: number;
+    ballsCollected: number;
+    ballsAtStartOfRound: number;
+} = {
     round: 0,
     balls: initialBalls,
     ballsCollected: 0,
-    ballsAtStartOfRound: initialBalls,
+    ballsAtStartOfRound: 0,
+};
+
+export const resetGameData = () => {
+    gameData.round = 0;
+    gameData.balls = initialBalls;
+    gameData.ballsCollected = 0;
+    gameData.ballsAtStartOfRound = 0;
 };
 
 export const graphicsMap: { [bodyId: string]: PIXI.Graphics } = {};
