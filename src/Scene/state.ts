@@ -13,6 +13,7 @@ const initialBalls = 1;
 export const gameData = {
     round: 0,
     balls: initialBalls,
+    ballsCollected: 0,
     ballsAtStartOfRound: initialBalls,
 };
 

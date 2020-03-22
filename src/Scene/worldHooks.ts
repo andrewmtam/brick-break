@@ -77,6 +77,7 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
                     );
                 }
                 stepCallbacksManager.queueStepCallback(() => {
+                    gameData.ballsCollected++;
                     ballBody.getWorld().destroyBody(ballBody);
                     // If after destroying this ball, there are no more
                     // then start the next round

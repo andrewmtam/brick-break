@@ -92,6 +92,21 @@ export const Scene = () => {
         const rayGraphic = new PIXI.Graphics();
         app.stage.addChild(rayGraphic);
 
+        const style = new PIXI.TextStyle({
+            align: 'center',
+            fontFamily: 'Arial',
+            fontSize: 24,
+            fontWeight: 'bold',
+            fill: ['#ffffff', '#00ff99'], // gradient
+            stroke: '#4a1850',
+            strokeThickness: 1,
+            wordWrap: true,
+            wordWrapWidth: 440,
+        });
+        const ballText = new PIXI.Text('testinggg', style);
+        ballText.scale.set(1 / zoom, -1 / zoom);
+        app.stage.addChild(ballText);
+
         // Only for physical collision
         world.on('begin-contact', onBeginContact(world, app));
         world.on('remove-body', onRemoveBody(app));
@@ -172,7 +187,7 @@ export const Scene = () => {
             if (ctx) {
                 renderToCanvas(ctx);
             }
-            renderToPixi(app, rayGraphic);
+            renderToPixi(app, rayGraphic, ballText);
 
             // request a new frame
             window.requestAnimationFrame(loop);
@@ -188,9 +203,8 @@ export const Scene = () => {
 
     return (
         <div>
-            <span>Text</span>
             <canvas ref={pixiRef} style={style} />
-            (<canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
+            <canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
         </div>
     );
 };

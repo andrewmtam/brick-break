@@ -3,6 +3,7 @@ import * as PIXI from 'pixi.js';
 import { flatMap, forEach } from 'lodash';
 import { BodyType } from './types';
 import {
+    gameData,
     zoom,
     blockSize,
     physicalWidth,
@@ -13,6 +14,7 @@ import {
     bodyData,
     graphicsMap,
     ballPosition,
+    ballRadius,
 } from './state';
 
 function transformPhysicsCoordinateToCanvasCoordinate(value: number) {
@@ -110,10 +112,13 @@ export function createGraphicFromBody(body: Body) {
         const shapeType = shape.getType();
 
         if (shapeType === 'circle') {
+            // NOTE - must draw at original size and then scale it down
+            // in order for a smooth circle
             graphics.lineStyle(2 / zoom, 0xffcccb, 1, 0, false);
             graphics.beginFill(0xffff0b, 0.5);
-            graphics.drawCircle(0, 0, shape.getRadius());
+            graphics.drawCircle(0, 0, shape.getRadius() * zoom);
             graphics.endFill();
+            graphics.scale.set(1 / zoom, 1 / zoom);
             graphics.transform.position.set(x, y);
         } else {
             if (userData.bodyType === BodyType.Block) {
@@ -157,7 +162,11 @@ export function renderToCanvas(ctx: CanvasRenderingContext2D) {
 }
 
 // TODO:raygraphic shouldn't be here
-export function renderToPixi(app: PIXI.Application, rayGraphic: PIXI.Graphics) {
+export function renderToPixi(
+    app: PIXI.Application,
+    rayGraphic: PIXI.Graphics,
+    ballText: PIXI.Text,
+) {
     // PIXI stuffs
     forEach(bodyData, (body, id) => {
         const { bodyType, textGraphic, hitPoints } = body.getUserData();
@@ -208,4 +217,10 @@ export function renderToPixi(app: PIXI.Application, rayGraphic: PIXI.Graphics) {
             rayGraphic.lineTo(point.x, point.y);
         }
     });
+
+    ballText.text = gameData.balls.toString();
+    ballText.position.set(
+        ballPosition.x - ballText.width / 2,
+        ballPosition.y + ballRadius * 3 + ballText.height / 2,
+    );
 }

@@ -81,7 +81,7 @@ export function fillRow(world: World) {
                 const bodyParams = { position: Vec2(xCoordinate, height / 2 - blockSize) };
                 // Start doing triangles!
                 // And also introduce double healthblocks
-                if (gameData.round > 1) {
+                if (gameData.round > 5) {
                     createBlock({
                         world,
                         hasDoubleHitpoints: Math.random() > 0.9,
