@@ -18,7 +18,7 @@ import {
 } from './state';
 import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
 import { createBody, setupNextRound } from './physicsHelpers';
-import { onBeginContact } from './collisionHelpers';
+import { onBeginContact, onRemoveBody, onAddBody } from './worldHooks';
 
 // TODO:
 // Make a way to call balls back
@@ -56,6 +56,21 @@ export const Scene = () => {
 
         const world = new World(Vec2(0, 0));
 
+        //PIXI.settings.RESOLUTION = window.devicePixelRatio;
+        const app = new PIXI.Application({
+            antialias: true,
+            width: physicalWidth,
+            height: physicalHeight,
+        });
+        document.body.appendChild(app.view);
+
+        // Only for physical collision
+        world.on('begin-contact', onBeginContact(world, app));
+        world.on('remove-body', onRemoveBody(app));
+
+        // @ts-ignore
+        world.on('add-body', onAddBody(app));
+
         // Create walls, but we don't need to draw them on the canvas
         // Left wall
         createBody({ world, bodyType: BodyType.Wall }).createFixture({
@@ -92,20 +107,9 @@ export const Scene = () => {
         const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
         const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
 
-        //PIXI.settings.RESOLUTION = window.devicePixelRatio;
-        const app = new PIXI.Application({
-            antialias: true,
-            width: physicalWidth,
-            height: physicalHeight,
-        });
-        document.body.appendChild(app.view);
-
         // TODO: Blurry
         // TODO: Remove images
 
-        const graphics = new PIXI.Graphics();
-        // Rectangle
-        app.stage.addChild(graphics);
         app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
         app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
         app.stage.interactive = true;
@@ -133,15 +137,6 @@ export const Scene = () => {
         canvas.ontouchend = onClick;
         canvas.onmousemove = onMove;
         canvas.ontouchmove = onMove;
-
-        // Only for physical collision
-        world.on('begin-contact', onBeginContact(world, app));
-        world.on('remove-body', body => {
-            const { id, bodyType } = body.getUserData();
-            delete bodyData[id];
-            delete indexedBodyData[bodyType][id];
-            app.stage.removeChild(graphicsMap[id]);
-        });
 
         // rendering loop
         let prevTime = new Date().getTime();

@@ -99,6 +99,7 @@ export function drawBody(ctx: CanvasRenderingContext2D, body: Body, fillStyle = 
 
 export function createGraphicFromBody(body: Body) {
     const graphics = new PIXI.Graphics();
+    const userData = body.getUserData();
 
     const x = body.getPosition().x;
     const y = body.getPosition().y;
@@ -109,12 +110,15 @@ export function createGraphicFromBody(body: Body) {
         const shapeType = shape.getType();
 
         if (shapeType === 'circle') {
-            graphics.lineStyle(0);
+            graphics.lineStyle(2 / zoom, 0xffcccb, 1, 0, false);
             graphics.beginFill(0xffff0b, 0.5);
             graphics.drawCircle(0, 0, shape.getRadius());
             graphics.endFill();
             graphics.transform.position.set(x, y);
         } else {
+            if (userData.bodyType === BodyType.Block) {
+                graphics.lineStyle(2 / zoom, 0xffcccb, 1, 0, false);
+            }
             graphics.beginFill(0xde3249);
             const points = flatMap(vertices, vertex => {
                 const xVertex = vertex.x;

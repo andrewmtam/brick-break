@@ -214,13 +214,6 @@ export function createBody({
     const body = bodyParams ? world.createBody(bodyParams) : world.createBody();
     const id = uuidv4();
     body.setUserData({ ...userData, id, bodyType });
-    bodyData[id] = body;
-
-    // For easier access to all bodies
-    if (!indexedBodyData[bodyType]) {
-        indexedBodyData[bodyType] = {};
-    }
-    indexedBodyData[bodyType][id] = body;
-
+    world.publish('add-body', body, undefined, undefined);
     return body;
 }
