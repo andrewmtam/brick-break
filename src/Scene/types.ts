@@ -1,3 +1,5 @@
+import * as PIXI from 'pixi.js';
+
 export enum BodyType {
     Block = 'block',
     Ball = 'ball',
@@ -16,6 +18,7 @@ export interface UserData {
     isBottomWall: boolean;
     powerup: Powerup;
     active: boolean;
+    textGraphic: PIXI.Text;
 }
 
 declare module 'planck-js' {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edge, Vec2, World, Body } from 'planck-js';
+import { Edge, Vec2, World } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { BodyType } from './Scene/types';
 import { renderToPixi, renderToCanvas } from './Scene/renderHelpers';
@@ -14,7 +14,6 @@ import {
     indexedBodyData,
     graphicsMap,
     stepCallbacksManager,
-    bodyData,
 } from './Scene/state';
 import {
     transformCanvasCoordinateToPhysical,
@@ -51,68 +50,27 @@ window.graphicsMap = graphicsMap;
 // Sometimes there are blasters
 export const Scene = () => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
+    const pixiRef = React.useRef<HTMLCanvasElement>(null);
     React.useEffect(() => {
         const canvas = canvasRef.current;
+        const pixiContainer = pixiRef.current;
         if (!canvas) {
+            return;
+        }
+        if (!pixiContainer) {
             return;
         }
         const ctx = canvas.getContext('2d');
 
         const world = new World(Vec2(0, 0));
 
-        //PIXI.settings.RESOLUTION = window.devicePixelRatio;
+        PIXI.settings.RESOLUTION = window.devicePixelRatio;
         const app = new PIXI.Application({
             antialias: true,
             width: physicalWidth,
             height: physicalHeight,
+            view: pixiContainer,
         });
-        document.body.appendChild(app.view);
-
-        // Only for physical collision
-        world.on('begin-contact', onBeginContact(world, app));
-        world.on('remove-body', onRemoveBody(app));
-
-        // @ts-ignore
-        world.on('add-body', onAddBody(app));
-
-        // Create walls, but we don't need to draw them on the canvas
-        // Left wall
-        createBody({ world, bodyType: BodyType.Wall }).createFixture({
-            shape: Edge(Vec2(-width / 2, height / 2), Vec2(-width / 2, -height / 2)),
-            restitution: 1,
-            friction: 0,
-        });
-
-        // Right wall
-        createBody({ world, bodyType: BodyType.Wall }).createFixture({
-            shape: Edge(Vec2(width / 2, -height / 2), Vec2(width / 2, height / 2)),
-            restitution: 1,
-            friction: 0,
-        });
-
-        // Top wall
-        createBody({ world, bodyType: BodyType.Wall }).createFixture({
-            shape: Edge(Vec2(width / 2, height / 2), Vec2(-width / 2, height / 2)),
-            restitution: 1,
-            friction: 0,
-        });
-
-        // Bottom wall
-        createBody({
-            world,
-            bodyType: BodyType.Wall,
-            userData: { isBottomWall: true },
-        }).createFixture({
-            shape: Edge(Vec2(width / 2, -height / 2), Vec2(-width / 2, -height / 2)),
-            restitution: 1,
-            friction: 0,
-        });
-
-        const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
-        const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
-
-        // TODO: Blurry
-        // TODO: Remove images
 
         app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
         app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
@@ -133,6 +91,66 @@ export const Scene = () => {
         // Add the ray
         const rayGraphic = new PIXI.Graphics();
         app.stage.addChild(rayGraphic);
+
+        // Only for physical collision
+        world.on('begin-contact', onBeginContact(world, app));
+        world.on('remove-body', onRemoveBody(app));
+
+        // @ts-ignore
+        world.on('add-body', onAddBody(app));
+
+        // Create walls, but we don't need to draw them on the canvas
+        // Left wall
+        createBody({
+            world,
+            bodyType: BodyType.Wall,
+            onAfterCreateBody: body =>
+                body.createFixture({
+                    shape: Edge(Vec2(-width / 2, height / 2), Vec2(-width / 2, -height / 2)),
+                    restitution: 1,
+                    friction: 0,
+                }),
+        });
+
+        // Right wall
+        createBody({
+            world,
+            bodyType: BodyType.Wall,
+            onAfterCreateBody: body =>
+                body.createFixture({
+                    shape: Edge(Vec2(width / 2, -height / 2), Vec2(width / 2, height / 2)),
+                    restitution: 1,
+                    friction: 0,
+                }),
+        });
+
+        // Top wall
+        createBody({
+            world,
+            bodyType: BodyType.Wall,
+            onAfterCreateBody: body =>
+                body.createFixture({
+                    shape: Edge(Vec2(width / 2, height / 2), Vec2(-width / 2, height / 2)),
+                    restitution: 1,
+                    friction: 0,
+                }),
+        });
+
+        // Bottom wall
+        createBody({
+            world,
+            bodyType: BodyType.Wall,
+            userData: { isBottomWall: true },
+            onAfterCreateBody: body =>
+                body.createFixture({
+                    shape: Edge(Vec2(width / 2, -height / 2), Vec2(-width / 2, -height / 2)),
+                    restitution: 1,
+                    friction: 0,
+                }),
+        });
+
+        const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
+        const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
 
         // Iniital blocks
         setupNextRound(world);
@@ -172,6 +190,7 @@ export const Scene = () => {
         <div>
             <span>Text</span>
             <canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
+            <canvas ref={pixiRef} style={style} />
         </div>
     );
 };

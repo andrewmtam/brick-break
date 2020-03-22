@@ -10,8 +10,6 @@ import {
     indexedBodyData,
     ballPosition,
     ballRadius,
-    bodyData,
-    graphicsMap,
 } from './state';
 import { BodyType, Powerup, UserData } from './types';
 
@@ -122,10 +120,12 @@ export function createBlock({
         userData: {
             hitPoints: hasDoubleHitpoints ? gameData.round * 2 : gameData.round,
         },
-    }).createFixture({
-        shape,
-        restitution: 1,
-        friction: 0,
+        onAfterCreateBody: body =>
+            body.createFixture({
+                shape,
+                restitution: 1,
+                friction: 0,
+            }),
     });
 }
 
@@ -138,13 +138,15 @@ export function createBall(world: World) {
             position: ballPosition,
             bullet: true,
         },
-    }).createFixture({
-        shape: Circle(ballRadius),
-        restitution: 1,
-        friction: 0,
-        // All balls bust have this filter group because they don't collide with each other
-        // All powerups must also have this filter group because they also don' collied
-        filterGroupIndex: -1,
+        onAfterCreateBody: body =>
+            body.createFixture({
+                shape: Circle(ballRadius),
+                restitution: 1,
+                friction: 0,
+                // All balls bust have this filter group because they don't collide with each other
+                // All powerups must also have this filter group because they also don' collied
+                filterGroupIndex: -1,
+            }),
     });
 }
 
@@ -153,19 +155,20 @@ export function createPowerup(world: World, bodyParams: BodyDef) {
         world,
         bodyType: BodyType.Powerup,
         bodyParams,
-    });
+        onAfterCreateBody: body => {
+            body.createFixture({
+                shape: Circle(ballRadius),
+                restitution: 1,
+                friction: 0,
+                isSensor: true,
+            });
 
-    powerup.createFixture({
-        shape: Circle(ballRadius),
-        restitution: 1,
-        friction: 0,
-        isSensor: true,
-    });
-
-    powerup.setUserData({
-        ...powerup.getUserData(),
-        powerup: Powerup.AddBall,
-        active: true,
+            body.setUserData({
+                ...body.getUserData(),
+                powerup: Powerup.AddBall,
+                active: true,
+            });
+        },
     });
 
     return powerup;
@@ -205,15 +208,18 @@ export function createBody({
     bodyType,
     bodyParams,
     userData,
+    onAfterCreateBody,
 }: {
     world: World;
     bodyType: BodyType;
     bodyParams?: BodyDef;
     userData?: Partial<UserData>;
+    onAfterCreateBody: (body: Body) => any;
 }): Body {
     const body = bodyParams ? world.createBody(bodyParams) : world.createBody();
     const id = uuidv4();
     body.setUserData({ ...userData, id, bodyType });
+    onAfterCreateBody(body);
     world.publish('add-body', body, undefined, undefined);
     return body;
 }

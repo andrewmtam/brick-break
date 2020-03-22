@@ -160,21 +160,23 @@ export function renderToCanvas(ctx: CanvasRenderingContext2D) {
 export function renderToPixi(app: PIXI.Application, rayGraphic: PIXI.Graphics) {
     // PIXI stuffs
     forEach(bodyData, (body, id) => {
-        const userData = body.getUserData();
-        if (userData.bodyType === BodyType.Wall) {
+        const { bodyType, textGraphic, hitPoints } = body.getUserData();
+        if (bodyType === BodyType.Wall) {
             return;
         }
         const graphic = graphicsMap[id];
+        const bodyPosition = body.getPosition();
         if (graphic) {
-            const bodyPosition = body.getPosition();
-            //graphic.transform.position.set(10, 10);
-            graphic.transform.position.set(bodyPosition.x, bodyPosition.y);
+            graphic.position.set(bodyPosition.x, bodyPosition.y);
             //graphic.x = bodyPosition.x;
             //graphic.y = bodyPosition.y;
-        } else {
-            const graphic = createGraphicFromBody(body);
-            graphicsMap[userData.id] = graphic;
-            app.stage.addChild(graphic);
+        }
+        if (textGraphic && bodyType === BodyType.Block) {
+            textGraphic.text = hitPoints + '';
+            textGraphic.position.set(
+                bodyPosition.x - textGraphic.width / 2,
+                bodyPosition.y + textGraphic.height / 2,
+            );
         }
     });
     // Also draw the rays

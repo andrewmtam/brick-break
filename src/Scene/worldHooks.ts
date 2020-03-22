@@ -1,8 +1,10 @@
 import { Contact, Vec2, World, Body } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { last, size } from 'lodash';
+import { BodyType } from './types';
 import { updateBallVelocityMap, setupNextRound } from './physicsHelpers';
 import {
+    zoom,
     gameData,
     ballVelocityMap,
     stepCallbacksManager,
@@ -13,6 +15,8 @@ import {
     bodyData,
     graphicsMap,
 } from './state';
+import { createGraphicFromBody } from './renderHelpers';
+
 export const onBeginContact = (world: World, app: PIXI.Application) => (contact: Contact) => {
     const fixtureA = contact.getFixtureA();
     const fixtureB = contact.getFixtureB();
@@ -107,10 +111,16 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
 };
 
 export const onRemoveBody = (app: PIXI.Application) => (body: Body) => {
-    const { id, bodyType } = body.getUserData();
+    const { id, bodyType, textGraphic } = body.getUserData();
     delete bodyData[id];
     delete indexedBodyData[bodyType][id];
     app.stage.removeChild(graphicsMap[id]);
+    delete graphicsMap[id];
+
+    // If we are removing a block, then also delete the graphic for it
+    if (textGraphic) {
+        app.stage.removeChild(textGraphic);
+    }
 };
 
 export const onAddBody = (app: PIXI.Application) => (body: Body) => {
@@ -123,4 +133,30 @@ export const onAddBody = (app: PIXI.Application) => (body: Body) => {
         indexedBodyData[bodyType] = {};
     }
     indexedBodyData[bodyType][id] = body;
+
+    // Add the corresponding PIXI graphic
+
+    const graphic = createGraphicFromBody(body);
+    graphicsMap[id] = graphic;
+    app.stage.addChild(graphic);
+
+    // Also add text if its a text object
+    if (userData.bodyType === BodyType.Block) {
+        const style = new PIXI.TextStyle({
+            align: 'center',
+            fontFamily: 'Arial',
+            fontSize: 24,
+            fontWeight: 'bold',
+            fill: ['#ffffff', '#00ff99'], // gradient
+            stroke: '#4a1850',
+            strokeThickness: 1,
+            wordWrap: true,
+            wordWrapWidth: 440,
+        });
+
+        const textGraphic = new PIXI.Text(userData.hitPoints + '', style);
+        textGraphic.scale.set(1 / zoom, -1 / zoom);
+        app.stage.addChild(textGraphic);
+        body.setUserData({ ...userData, textGraphic });
+    }
 };
