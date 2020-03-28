@@ -62,11 +62,12 @@ export function getRandomBlockShape() {
 }
 
 export function fillRow(world: World) {
-    const xCoordinates = range(-width / 2 + blockSize, width / 2 - blockSize, blockSize);
+    const verticalOffset = blockSize * 1.5;
+    const xCoordinates = range(-width / 2 + blockSize / 2, width / 2, blockSize);
     // Fill a random spot with a ball
     const idxForBallPowerup = Math.floor(Math.random() * xCoordinates.length);
     createPowerup(world, {
-        position: Vec2(xCoordinates[idxForBallPowerup], height / 2 - blockSize),
+        position: Vec2(xCoordinates[idxForBallPowerup], height / 2 - verticalOffset),
     });
 
     // Render blocks
@@ -78,7 +79,7 @@ export function fillRow(world: World) {
         xCoordinate => {
             // New block appears 50% of the time
             if (Math.random() < 0.5) {
-                const bodyParams = { position: Vec2(xCoordinate, height / 2 - blockSize) };
+                const bodyParams = { position: Vec2(xCoordinate, height / 2 - verticalOffset) };
                 // Start doing triangles!
                 // And also introduce double healthblocks
                 if (gameData.round > 5) {

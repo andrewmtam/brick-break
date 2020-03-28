@@ -1,6 +1,9 @@
 import { World, Vec2 } from 'planck-js';
+import * as PIXI from 'pixi.js';
 import { first, forEach, reduce, values, size, slice } from 'lodash';
 import {
+    physicalWidth,
+    physicalHeight,
     gameData,
     zoom,
     height,
@@ -37,9 +40,14 @@ export function transformCanvasCoordinateToPhysical(event: MouseEvent | TouchEve
             ? transformTouchEvent(event as TouchEvent)
             : transformMouseEvent(event as MouseEvent);
 
+    const target = event.target as HTMLCanvasElement;
+
+    const offsetWidth = target.offsetWidth;
+    const correction = offsetWidth / physicalWidth;
+
     return {
-        x: (x / zoom) * retinaScale - width / 2,
-        y: (-y / zoom) * retinaScale + height / 2,
+        x: ((x / zoom) * retinaScale) / correction - width / 2,
+        y: ((-y / zoom) * retinaScale) / correction + width / 2,
     };
 }
 
@@ -80,7 +88,7 @@ export const onMoveFactory = (world: World) => (
     const mousePosition = Vec2(x, y);
     const trajectory = Vec2.sub(mousePosition, gameData.ballPosition);
     trajectory.normalize();
-    const rayLength = height * 0.75;
+    const rayLength = height;
 
     const nextPosition = Vec2.add(gameData.ballPosition, Vec2.mul(trajectory, rayLength));
 
@@ -107,4 +115,14 @@ export const onMoveFactory = (world: World) => (
 
         return fraction;
     });
+};
+
+export const onResizeFactory = (app: PIXI.Application, container: HTMLDivElement) => (e: Event) => {
+    const { offsetHeight, offsetWidth } = container;
+    const correction = offsetWidth / physicalWidth;
+    app.stage.transform.scale.set(
+        (zoom / retinaScale) * correction,
+        (-zoom / retinaScale) * correction,
+    );
+    app.stage.transform.position.set(offsetWidth / 2, offsetHeight / 2);
 };

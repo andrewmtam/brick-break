@@ -40,7 +40,6 @@ export function saveStateOfTheWorld(): SavedData {
         'world',
         JSON.stringify(dataToStore, (key, value) => {
             const className = value?.constructor?.name;
-            console.log(key, value, className);
             if (className === 'Vec2') {
                 const vec = value as Vec2;
                 return { x: vec.x, y: vec.y, _class: 'Vec2' };

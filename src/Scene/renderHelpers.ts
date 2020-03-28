@@ -1,22 +1,8 @@
-import { Body, World, Vec2, PolygonShape } from 'planck-js';
+import { Body, Vec2, PolygonShape } from 'planck-js';
 import * as PIXI from 'pixi.js';
-import { noop, flatMap, forEach } from 'lodash';
+import { flatMap, forEach } from 'lodash';
 import { BodyType } from './types';
-import {
-    gameData,
-    zoom,
-    blockSize,
-    physicalWidth,
-    physicalHeight,
-    retinaScale,
-    rayHelper,
-    indexedBodyData,
-    bodyData,
-    graphicsMap,
-    ballRadius,
-} from './state';
-
-import { transformCanvasCoordinateToPhysical, onClickFactory, onMoveFactory } from './eventHelpers';
+import { gameData, zoom, blockSize, rayHelper, bodyData, graphicsMap, ballRadius } from './state';
 
 function transformPhysicsCoordinateToCanvasCoordinate(value: number) {
     return value * zoom;
@@ -139,29 +125,6 @@ export function createGraphicFromBody(body: Body) {
     return graphics;
 }
 
-export function renderToCanvas(ctx: CanvasRenderingContext2D) {
-    // Clear the canvas
-    // The canvas should be twice as big, to account for retina stuffs
-    ctx.clearRect(0, 0, physicalWidth * retinaScale, physicalHeight * retinaScale);
-
-    // Transform the canvas
-    // Note that we need to flip the y axis since Canvas pixel coordinates
-    // goes from top to bottom, while physics does the opposite.
-    ctx.save();
-    ctx.translate((physicalWidth * retinaScale) / 2, (physicalHeight * retinaScale) / 2); // Translate to the center
-    ctx.scale(1, -1); // Zoom in and flip y axis
-
-    // Draw all bodies
-    ctx.strokeStyle = 'none';
-
-    forEach(indexedBodyData.powerup, powerup => drawBody(ctx, powerup, 'red'));
-    forEach(indexedBodyData.block, block => drawBody(ctx, block, 'purple'));
-    forEach(indexedBodyData.ball, ball => drawBody(ctx, ball, 'green'));
-    drawRays(ctx, rayHelper.getRay());
-
-    ctx.restore();
-}
-
 // TODO:raygraphic shouldn't be here
 export function renderToPixi(
     app: PIXI.Application,
@@ -226,17 +189,4 @@ export function renderToPixi(
         gameData.ballPosition.x - ballText.width / 2,
         gameData.ballPosition.y + ballRadius * 3 + ballText.height / 2,
     );
-}
-
-export function setupCanvas(world: World, canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext('2d');
-    const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
-    const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
-
-    canvas.onclick = onClick;
-    canvas.ontouchend = onClick;
-    canvas.onmousemove = onMove;
-    canvas.ontouchmove = onMove;
-
-    return () => (ctx ? renderToCanvas(ctx) : noop);
 }

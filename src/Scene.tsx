@@ -1,13 +1,14 @@
 import React from 'react';
-import { noop } from 'lodash';
+import styled from 'styled-components';
 import { Edge, Vec2, World } from 'planck-js';
 import * as PIXI from 'pixi.js';
 import { BodyType } from './Scene/types';
-import { renderToPixi, setupCanvas } from './Scene/renderHelpers';
+import { renderToPixi } from './Scene/renderHelpers';
 import {
     retinaScale,
     physicalWidth,
     physicalHeight,
+    aspectRatio,
     zoom,
     width,
     height,
@@ -21,10 +22,24 @@ import {
     transformCanvasCoordinateToPhysical,
     onClickFactory,
     onMoveFactory,
+    onResizeFactory,
 } from './Scene/eventHelpers';
 import { createBody, setupNextRound } from './Scene/physicsHelpers';
 import { onBeginContact, onRemoveBody, onAddBody } from './Scene/worldHooks';
 import { restoreStateOfTheWorld } from './Scene/saveHelpers';
+
+const FixedAspectRatioContainer = styled.div`
+    padding-top: ${(1 / aspectRatio) * 100}%;
+    position: relative;
+`;
+
+const CanvasContainer = styled.div`
+    border: 1px solid black;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+`;
 
 // TODO:
 // Make a way to call balls back
@@ -52,7 +67,6 @@ window.graphicsMap = graphicsMap;
 // Sometimes there are +1 balls
 // Sometimes there are blasters
 export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
-    const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const pixiRef = React.useRef<HTMLDivElement>(null);
     React.useEffect(() => {
         const pixiContainer = pixiRef.current;
@@ -76,9 +90,8 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
 
         const onClick = onClickFactory(world)(transformCanvasCoordinateToPhysical);
         const onMove = onMoveFactory(world)(transformCanvasCoordinateToPhysical);
+        const onResize = onResizeFactory(app, pixiContainer);
 
-        app.stage.transform.scale.set(zoom / retinaScale, -zoom / retinaScale);
-        app.stage.transform.position.set(physicalWidth / 2, physicalHeight / 2);
         app.stage.interactive = true;
         app.renderer.plugins.interaction.on('mousedown', (e: PIXI.interaction.InteractionEvent) => {
             onClick(e.data.originalEvent);
@@ -92,6 +105,8 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
         app.renderer.plugins.interaction.on('touchmove', (e: PIXI.interaction.InteractionEvent) => {
             onMove(e.data.originalEvent);
         });
+        window.addEventListener('resize', onResize);
+        window.dispatchEvent(new Event('resize'));
 
         // Add the ray
         const rayGraphic = new PIXI.Graphics();
@@ -183,8 +198,6 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
             setupNextRound(world);
         }
 
-        const canvasRenderer = canvasRef.current ? setupCanvas(world, canvasRef.current) : noop;
-
         // rendering loop
         let prevTime = new Date().getTime();
         (function loop() {
@@ -194,7 +207,6 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
 
             world.step(elapsedTime / 1000);
 
-            canvasRenderer();
             renderToPixi(app, rayGraphic, ballText);
 
             // request a new frame
@@ -203,12 +215,10 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
         })();
     });
 
-    const style = {
-        border: '1px solid black',
-        width: '100%',
-        height: '100%',
-    };
-
     //<canvas style={style} ref={canvasRef} width={width * zoom} height={height * zoom} />
-    return <div ref={pixiRef} style={style} />;
+    return (
+        <FixedAspectRatioContainer>
+            <CanvasContainer ref={pixiRef} />
+        </FixedAspectRatioContainer>
+    );
 };
