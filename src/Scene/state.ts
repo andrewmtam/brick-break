@@ -3,15 +3,15 @@ import { Vec2, Body } from 'planck-js';
 import { BodyType, GameData } from './types';
 
 export const aspectRatio = 9 / 11;
-export const retinaScale = 2;
+export const retinaScale = 4;
 export const physicalWidth = 300;
 export const physicalHeight = physicalWidth / aspectRatio;
-export const zoom = 50;
+export const zoom = 50 * retinaScale;
 export const width = (physicalWidth / zoom) * retinaScale;
 export const height = (physicalHeight / zoom) * retinaScale;
 export const blockSize = width / 10;
 export const ballRadius = blockSize / 2 / 3;
-export const initialBallVelocity = 50;
+export const initialBallVelocity = 20;
 
 const initialBalls = 1;
 
@@ -36,7 +36,7 @@ export const indexedBodyData: {
     wall: {},
     powerup: {},
 };
-export let ballVelocityMap: { [id: string]: Vec2[] } = {};
+export const ballVelocityMap: { [id: string]: Vec2[] } = {};
 export const resetData = () => {
     gameData.round = 0;
     gameData.balls = initialBalls;
@@ -46,11 +46,12 @@ export const resetData = () => {
 
     forEach(keys(graphicsMap), key => delete graphicsMap[key]);
     forEach(keys(bodyData), key => delete bodyData[key]);
+    forEach(keys(ballVelocityMap), key => delete ballVelocityMap[key]);
+
     indexedBodyData.block = {};
     indexedBodyData.ball = {};
     indexedBodyData.wall = {};
     indexedBodyData.powerup = {};
-    ballVelocityMap = {};
 };
 
 export const rayHelper = (() => {

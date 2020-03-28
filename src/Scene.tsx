@@ -76,7 +76,7 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
 
         const world = new World(Vec2(0, 0));
 
-        PIXI.settings.RESOLUTION = window.devicePixelRatio;
+        PIXI.settings.RESOLUTION = retinaScale;
         const app = new PIXI.Application({
             antialias: true,
             width: physicalWidth,

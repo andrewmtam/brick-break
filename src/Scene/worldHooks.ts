@@ -4,6 +4,7 @@ import { last, size } from 'lodash';
 import { BodyType } from './types';
 import { updateBallVelocityMap, setupNextRound } from './physicsHelpers';
 import {
+    initialBallVelocity,
     zoom,
     gameData,
     ballVelocityMap,
@@ -88,7 +89,7 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
             // Edge case handling for when the ball basically stops moving
             if (x && Math.abs(y) < Math.abs(0.01)) {
                 console.log(y, 'reset velocity', ballBody);
-                ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius));
+                ballBody.setLinearVelocity(Vec2(x, Math.random() * ballRadius * 2));
             }
         } else if (blockBody) {
             const existingData = blockBody.getUserData();
