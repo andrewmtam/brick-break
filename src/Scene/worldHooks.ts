@@ -11,7 +11,6 @@ import {
     ballRadius,
     indexedBodyData,
     width,
-    ballPosition,
     bodyData,
     graphicsMap,
 } from './state';
@@ -71,7 +70,7 @@ export const onBeginContact = (world: World, app: PIXI.Application) => (contact:
             if (wallBody.getUserData().isBottomWall) {
                 // Track the posiition of the first ball that left
                 if (size(indexedBodyData.ball) === gameData.ballsAtStartOfRound) {
-                    ballPosition.x = Math.max(
+                    gameData.ballPosition.x = Math.max(
                         Math.min(ballBody.getPosition().x, width / 2 - ballRadius * 2),
                         -width / 2 + ballRadius * 2,
                     );

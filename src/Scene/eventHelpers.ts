@@ -1,11 +1,11 @@
 import { World, Vec2 } from 'planck-js';
 import { first, forEach, reduce, values, size, slice } from 'lodash';
 import {
+    gameData,
     zoom,
     height,
     width,
     retinaScale,
-    ballPosition,
     rayHelper,
     ballVelocityMap,
     indexedBodyData,
@@ -50,7 +50,7 @@ export const onClickFactory = (world: World) => (
     // TODO: This could be updated...
     rayHelper.resetRay();
     const { x, y } = eventTransformer(event);
-    const trajectory = Vec2.sub(Vec2(x, y), ballPosition);
+    const trajectory = Vec2.sub(Vec2(x, y), gameData.ballPosition);
     trajectory.normalize();
 
     // TODO: Also update this
@@ -78,14 +78,14 @@ export const onMoveFactory = (world: World) => (
     event.preventDefault();
     const { x, y } = eventTransformer(event);
     const mousePosition = Vec2(x, y);
-    const trajectory = Vec2.sub(mousePosition, ballPosition);
+    const trajectory = Vec2.sub(mousePosition, gameData.ballPosition);
     trajectory.normalize();
     const rayLength = height * 0.75;
 
-    const nextPosition = Vec2.add(ballPosition, Vec2.mul(trajectory, rayLength));
+    const nextPosition = Vec2.add(gameData.ballPosition, Vec2.mul(trajectory, rayLength));
 
-    rayHelper.setRay([ballPosition, nextPosition]);
-    world.rayCast(ballPosition, nextPosition, function(fixture, point, normal, fraction) {
+    rayHelper.setRay([gameData.ballPosition, nextPosition]);
+    world.rayCast(gameData.ballPosition, nextPosition, function(fixture, point, normal, fraction) {
         if (fixture.getBody().getUserData().bodyType === 'powerup') {
             return -1;
         }

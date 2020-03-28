@@ -13,7 +13,6 @@ import {
     indexedBodyData,
     bodyData,
     graphicsMap,
-    ballPosition,
     ballRadius,
 } from './state';
 
@@ -214,7 +213,9 @@ export function renderToPixi(
     rayGraphic.clear();
     forEach(rayHelper.getRay(), (point, idx) => {
         if (idx === 0) {
-            rayGraphic.lineStyle(2 / zoom, 0xffffff).moveTo(ballPosition.x, ballPosition.y);
+            rayGraphic
+                .lineStyle(2 / zoom, 0xffffff)
+                .moveTo(gameData.ballPosition.x, gameData.ballPosition.y);
         } else {
             rayGraphic.lineTo(point.x, point.y);
         }
@@ -222,8 +223,8 @@ export function renderToPixi(
 
     ballText.text = gameData.balls.toString();
     ballText.position.set(
-        ballPosition.x - ballText.width / 2,
-        ballPosition.y + ballRadius * 3 + ballText.height / 2,
+        gameData.ballPosition.x - ballText.width / 2,
+        gameData.ballPosition.y + ballRadius * 3 + ballText.height / 2,
     );
 }
 

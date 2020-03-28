@@ -15,7 +15,7 @@ import {
     indexedBodyData,
     graphicsMap,
     stepCallbacksManager,
-    resetGameData,
+    resetData,
 } from './Scene/state';
 import {
     transformCanvasCoordinateToPhysical,
@@ -24,6 +24,7 @@ import {
 } from './Scene/eventHelpers';
 import { createBody, setupNextRound } from './Scene/physicsHelpers';
 import { onBeginContact, onRemoveBody, onAddBody } from './Scene/worldHooks';
+import { restoreStateOfTheWorld } from './Scene/saveHelpers';
 
 // TODO:
 // Make a way to call balls back
@@ -159,7 +160,9 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
         createBody({
             world,
             bodyType: BodyType.Wall,
-            userData: { isBottomWall: true },
+            bodyParams: {
+                userData: { isBottomWall: true },
+            },
             onAfterCreateBody: body =>
                 body.createFixture({
                     shape: Edge(Vec2(width / 2, -height / 2), Vec2(-width / 2, -height / 2)),
@@ -168,13 +171,15 @@ export const Scene = ({ restoreFromState }: { restoreFromState: boolean }) => {
                 }),
         });
 
+        resetData();
+
         // Iniital blocks
         if (restoreFromState) {
             // Need to capture all of the block locations
             // Given the gameData, and the block/ball/powertup locations,
             // generate the next board
+            restoreStateOfTheWorld(world);
         } else {
-            resetGameData();
             setupNextRound(world);
         }
 

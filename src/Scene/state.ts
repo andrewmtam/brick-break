@@ -1,5 +1,5 @@
 import { Vec2, Body } from 'planck-js';
-import { BodyType } from './types';
+import { BodyType, GameData } from './types';
 export const retinaScale = 2;
 export const physicalWidth = 300;
 export const physicalHeight = 500;
@@ -11,32 +11,39 @@ export const ballRadius = blockSize / 2 / 3;
 export const initialBallVelocity = 50;
 
 const initialBalls = 1;
-export const gameData: {
-    round: number;
-    balls: number;
-    ballsCollected: number;
-    ballsAtStartOfRound: number;
-} = {
+
+export const gameData: GameData = {
     round: 0,
     balls: initialBalls,
     ballsCollected: 0,
     ballsAtStartOfRound: 0,
+    ballPosition: Vec2(0, -height / 2 + ballRadius * 2),
 };
 
-export const resetGameData = () => {
+export const resetData = () => {
     gameData.round = 0;
     gameData.balls = initialBalls;
     gameData.ballsCollected = 0;
     gameData.ballsAtStartOfRound = 0;
+    gameData.ballPosition = Vec2(0, -height / 2 + ballRadius * 2);
+
+    graphicsMap = {};
+    bodyData = {};
+    indexedBodyData = {
+        block: {},
+        ball: {},
+        wall: {},
+        powerup: {},
+    };
+    ballVelocityMap = {};
 };
 
-export const graphicsMap: { [bodyId: string]: PIXI.Graphics } = {};
+export let graphicsMap: { [bodyId: string]: PIXI.Graphics } = {};
 // This changes based on where we last exited
-export const ballPosition = Vec2(0, -height / 2 + ballRadius * 2);
-export const bodyData: {
+export let bodyData: {
     [bodyId: string]: Body;
 } = {};
-export const indexedBodyData: {
+export let indexedBodyData: {
     [TKey in BodyType]: { [key: string]: Body };
 } = {
     block: {},
@@ -44,7 +51,7 @@ export const indexedBodyData: {
     wall: {},
     powerup: {},
 };
-export const ballVelocityMap: { [id: string]: Vec2[] } = {};
+export let ballVelocityMap: { [id: string]: Vec2[] } = {};
 
 export const rayHelper = (() => {
     let ray: Vec2[] = [];

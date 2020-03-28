@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Circle, Shape, Body, Vec2, World, Box, Polygon, BodyDef } from 'planck-js';
 import { forEach, slice, range } from 'lodash';
+import { saveStateOfTheWorld } from './saveHelpers';
 import {
     gameData,
     height,
@@ -8,10 +9,9 @@ import {
     width,
     ballVelocityMap,
     indexedBodyData,
-    ballPosition,
     ballRadius,
 } from './state';
-import { BodyType, Powerup, UserData } from './types';
+import { BodyType, Powerup } from './types';
 
 export function updateBallVelocityMap(ballBody: Body, velocity: Vec2) {
     const id = ballBody.getUserData().id;
@@ -84,7 +84,7 @@ export function fillRow(world: World) {
                 if (gameData.round > 5) {
                     createBlock({
                         world,
-                        hasDoubleHitpoints: Math.random() > 0.9,
+                        hasDoubleHitpoints: Math.random() > 0.6,
                         bodyParams,
                         shape: getRandomBlockShape(),
                     });
@@ -117,9 +117,12 @@ export function createBlock({
     return createBody({
         world,
         bodyType: BodyType.Block,
-        bodyParams,
-        userData: {
-            hitPoints: hasDoubleHitpoints ? gameData.round * 2 : gameData.round,
+        bodyParams: {
+            ...bodyParams,
+            userData: {
+                hitPoints: hasDoubleHitpoints ? gameData.round * 2 : gameData.round,
+                ...bodyParams.userData,
+            },
         },
         onAfterCreateBody: body =>
             body.createFixture({
@@ -136,7 +139,7 @@ export function createBall(world: World) {
         bodyType: BodyType.Ball,
         bodyParams: {
             type: 'dynamic',
-            position: ballPosition,
+            position: gameData.ballPosition,
             bullet: true,
         },
         onAfterCreateBody: body =>
@@ -181,7 +184,7 @@ export function setupNextRound(world: World) {
     forEach(range(0, gameData.balls), () => createBall(world));
     forEach(indexedBodyData.ball, ballBlock => {
         ballBlock.setLinearVelocity(Vec2(0, 0));
-        ballBlock.setPosition(ballPosition);
+        ballBlock.setPosition(gameData.ballPosition);
     });
 
     // Increment the level
@@ -202,24 +205,24 @@ export function setupNextRound(world: World) {
     fillRow(world);
 
     gameData.ballsAtStartOfRound = gameData.balls;
+
+    saveStateOfTheWorld();
 }
 
 export function createBody({
     world,
     bodyType,
     bodyParams,
-    userData,
     onAfterCreateBody,
 }: {
     world: World;
     bodyType: BodyType;
     bodyParams?: BodyDef;
-    userData?: Partial<UserData>;
     onAfterCreateBody: (body: Body) => any;
 }): Body {
     const body = bodyParams ? world.createBody(bodyParams) : world.createBody();
     const id = uuidv4();
-    body.setUserData({ ...userData, id, bodyType });
+    body.setUserData({ ...bodyParams?.userData, id, bodyType });
     onAfterCreateBody(body);
     world.publish('add-body', body, undefined, undefined);
     return body;
